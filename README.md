@@ -5,7 +5,7 @@
 
 ## 安装
 
-1. 将 `QModemAssistant-v1.0.0.apk` 传到手机（微信 / QQ / USB 均可）；
+1. 将 `QModemAssistant-v1.0.1.apk` 传到手机（微信 / QQ / USB 均可）；
 2. 点击安装（如提示"未知来源应用"，允许一次即可；APK 已用自签名证书正式签名）；
 3. 要求 Android 7.0（API 24）及以上。
 
