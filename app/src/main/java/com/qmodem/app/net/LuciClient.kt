@@ -555,19 +555,26 @@ class LuciClient(
         val valid = stringArray(atCfg.optJSONArray("valid_ports"))
         val ports = stringArray(atCfg.optJSONArray("ports"))
         val others = stringArray(atCfg.optJSONArray("other_ttys"))
+        // 后端字段名为 using_port（override_at_port 优先于 at_port）
         val def = sequenceOf(
+            atCfg.optString("using_port", ""),
             atCfg.optString("at_port", ""),
             section.atPort ?: "", ports.firstOrNull() ?: "", valid.firstOrNull() ?: ""
         ).firstOrNull { it.isNotBlank() }
         return AtConfig((valid + ports + others).distinct(), def)
     }
 
-    /** 执行 AT 命令，返回模组响应文本 */
+    /**
+     * 执行 AT 命令，返回模组响应文本。
+     *
+     * 注意：不传 use_ubus_flag —— LuCI 前端传的 use_ubus 后端实际读不到（字段名不一致），
+     * 等效于直接串口执行 `at "$port" "$cmd"`；传 "1" 会走 `at -u`（ubus_at_daemon 代理），
+     * 该守护进程在多数路由器上未运行，会导致 AT 命令全部失败。
+     */
     fun sendAt(section: ModemSection, at: String, port: String): String {
         val inner = JSONObject()
             .put("at", at)
             .put("port", port)
-            .put("use_ubus_flag", "1")
         val d = qmodemCall("send_at", JSONObject().put("params", inner), section.id)
         val atCfg = d.optJSONObject("at_cfg") ?: d
         if (atCfg.optString("status") != "1") {

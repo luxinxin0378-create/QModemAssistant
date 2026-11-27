@@ -38,6 +38,7 @@ class LuciClientTest {
     // 记录最近收到的写操作参数（用于断言）
     private var lastAtCmd: String? = null
     private var lastAtPort: String? = null
+    private var lastSendAtParams: org.json.JSONObject? = null
     private var lastPrefer: org.json.JSONArray? = null
     private var lastUsbMode: String? = null
     private var lastRebootMethod: String? = null
@@ -49,6 +50,7 @@ class LuciClientTest {
                 JSONObject().put(
                     "at_cfg",
                     JSONObject()
+                        .put("using_port", "/dev/ttyUSB2")
                         .put("ports", JSONArray().put("/dev/ttyUSB2").put("/dev/ttyUSB3"))
                         .put("valid_ports", JSONArray().put("/dev/ttyUSB2"))
                         .put("other_ttys", JSONArray().put("/dev/ttyUSB0"))
@@ -57,6 +59,7 @@ class LuciClientTest {
             )
             "send_at" -> {
                 val p = params.getJSONObject(3).getJSONObject("params")
+                lastSendAtParams = JSONObject(p.toString())
                 lastAtCmd = p.getString("at")
                 lastAtPort = p.getString("port")
                 val at = p.getString("at")
@@ -593,12 +596,17 @@ class LuciClientTest {
         val modem = c.getModems().first()
         val cfg = c.getAtConfig(modem)
         assertTrue(cfg.ports.contains("/dev/ttyUSB2"))
+        // 后端字段名为 using_port
         assertEquals("/dev/ttyUSB2", cfg.defaultPort)
         // CSQ 命令 mock 返回真实格式，可校验解析链路
         val res = c.sendAt(modem, "AT+CSQ", "/dev/ttyUSB2")
         assertTrue(res.contains("+CSQ: 25,99"))
         val other = c.sendAt(modem, "ATI", "/dev/ttyUSB2")
         assertTrue(other.contains("mock response"))
+        // 关键回归：不得传 use_ubus_flag（会走 at -u，多数路由器无 ubus_at_daemon 导致失败）
+        assertNotNull(lastSendAtParams)
+        assertFalse(lastSendAtParams!!.has("use_ubus_flag"))
+        assertEquals("/dev/ttyUSB2", lastAtPort)
     }
 
     @Test

@@ -339,7 +339,14 @@ class DashboardActivity : AppCompatActivity() {
             true
         } catch (e: Exception) {
             atFailCount++
-            atFailCount < 3   // 偶发失败跳过本轮，连续 3 次才降级
+            if (atFailCount >= 3) {
+                // 降级：必须清空旧实时值，否则全量刷新会被旧值覆盖，信号看起来"永不变化"
+                liveSignal = emptyMap()
+                liveMode = false
+                showBanner("实时 AT 查询不可用（${e.message}），信号来自 qmodem 数据（最长延迟 10 秒）；点刷新按钮可重试实时")
+                return false
+            }
+            true   // 偶发失败跳过本轮
         }
     }
 
@@ -368,6 +375,12 @@ class DashboardActivity : AppCompatActivity() {
         val modem = currentModem ?: return
         if (loading) return
         loading = true
+        // 手动/下拉刷新 = 用户主动要新数据：绕过 12 秒全量节流，并给实时通道一次复活机会
+        lastFullLoadAt = System.currentTimeMillis()
+        if (!liveMode) {
+            atFailCount = 0
+            liveMode = true
+        }
         tvBanner.visibility = View.GONE
 
         lifecycleScope.launch {
@@ -386,9 +399,9 @@ class DashboardActivity : AppCompatActivity() {
         }
     }
 
-    /** 全量条目合并实时信号值 */
+    /** 全量条目合并实时信号值（仅在实时模式生效） */
     private fun mergeLive(entries: List<InfoEntry>): List<InfoEntry> {
-        if (liveSignal.isEmpty()) return entries
+        if (!liveMode || liveSignal.isEmpty()) return entries
         return entries.map { e ->
             val k = e.key.uppercase()
             val v = when (k) {
@@ -456,6 +469,13 @@ class DashboardActivity : AppCompatActivity() {
         }
 
         tvUpdated.text = getString(R.string.updated_at, timeFmt.format(Date()))
+
+        // 降级状态常驻提示（render 统一管理，避免被其它刷新清掉）
+        if (!liveMode) {
+            showBanner("实时 AT 查询不可用，信号来自 qmodem 数据（最长延迟 10 秒）；点刷新可重试实时")
+        } else {
+            tvBanner.visibility = View.GONE
+        }
     }
 
     private fun bindBadge(badge: TextView, text: String?) {
