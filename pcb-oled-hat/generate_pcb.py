@@ -10,13 +10,13 @@ QModem OLED HAT — ESP32-S3 SuperMini 专用 0.96" IIC OLED 扩展板
   下排(Y=+7.62,左->右): TX RX 1 2 3 4 5 6 7
   注: 数字即 GPIO 号(IO1~IO13),TX/RX 为 USB 转串口占用,避免占用
 
-扩展板设计(屏幕立式,让开正面按键):
+扩展板设计(屏幕立式,只引出一个配网键):
   - 覆盖底板的 22.52x18 主体 + Y-端延伸 4mm 作为 OLED 立式焊盘区
   - OLED 用 90° 弯排针竖立在板边,显示面朝板外(水平方向可见),
-    屏幕不再平铺在正面,RESET/BOOT 按键区完全露出不被遮挡
-  - RESET(EN)/BOOT(GPIO0) 未引到排针,故开两个 Φ3.4 孔对准板上贴片按键,
-    附按键帽 STL 粘在贴片按键上穿出孔,实现壳体按键手感
-  - 若坚持屏幕平放: 只能平放正面(背面朝底板会挡显示且装不下),故采用立式
+    屏幕不再平铺在正面,按键区完全露出不被遮挡
+  - 复位靠断电(拔电/断电重启)实现,不设 RESET 按键
+  - BOOT(GPIO0) 未引到排针,故开 1 个 Φ3.4 孔对准板上贴片 BOOT 按键,
+    附按键帽 STL 粘在贴片按键上穿出孔,单击即进 WiFi 配网
   - OLED 接线: VCC<-3V3, GND<-GND, SCL<-IO9, SDA<-IO8 (与固件 s3mini_oled_096 一致)
 """
 import os
@@ -51,7 +51,8 @@ headers = [(x, -HY, TOP[i]) for i, x in enumerate(XS)] + \
           [(x, +HY, BOT[i]) for i, x in enumerate(XS)]
 
 # 板上贴片按键中心(由尺寸网格图实测,板中心为原点)
-BTN = [(-3.90, -5.10, 'RESET'), (-3.90, +4.20, 'BOOT')]
+# 只引 BOOT 一个键作配网用;RESET 复位靠断电实现,不设按键孔
+BTN = [(-3.90, +4.20, 'CFG')]
 BTN_R = 1.70                   # Φ3.4 按键孔
 
 # OLED 4 焊盘(顶部延伸区,2.54 间距),用 90° 弯排针立式安装,显示面朝板外
@@ -158,9 +159,9 @@ for a, b in zip(outline, outline[1:]):
 for label, (px, py, name) in zip(['GND','3V3','SCL','SDA'], oled):
     for (x1, y1), (x2, y2) in text_segs(label, px - 1.1, py - 2.2, size=0.62):
         silk += segment(x1, y1, x2, y2, 13)
-# 按键孔标注:RESET / BOOT
-for (bx, by, name), label in zip(BTN, ['RST','BOOT']):
-    for (x1, y1), (x2, y2) in text_segs(label, bx - 1.3, by + 2.3, size=0.58):
+# 按键孔标注:用 name(配网键 CFG)
+for (bx, by, name) in BTN:
+    for (x1, y1), (x2, y2) in text_segs(name, bx - 1.3, by + 2.3, size=0.58):
         silk += segment(x1, y1, x2, y2, 13)
 # 排针丝印(上排/下排,沿板外方向排布)
 for x, y, n in headers:
@@ -251,13 +252,13 @@ for px in [9.5, 17.5]:
 # 扩展板 HAT
 ax.add_patch(Rectangle((3, 3.54), 19, 1.0, facecolor='#3b82c4', edgecolor='#222', lw=1))
 ax.text(12.5, 4.04, 'OLED HAT（本扩展板）', fontsize=8, ha='center', va='center', color='white')
-# 按键帽:从底板贴片按键穿出扩展板孔,朝上露出
-for px in [10.6, 15.0]:
-    ax.add_patch(Rectangle((px, 1.1), 1.1, 3.9, facecolor='#ff6b6b', edgecolor='#a00000'))
-    ax.add_patch(Rectangle((px - 0.15, 5.0), 1.4, 0.55, facecolor='#ff9b9b', edgecolor='#a00000'))
-    ax.annotate('', xy=(px + 0.4, 7.1), xytext=(px + 0.4, 5.7),
-                arrowprops=dict(arrowstyle='-|>', color='#a00000', lw=1.4))
-    ax.text(px + 0.4, 7.3, '从顶面按', fontsize=7.4, ha='center', color='#a00000')
+# 配网键帽:从底板 BOOT 贴片按键穿出扩展板孔,朝上露出(复位靠断电,不设 RESET 键)
+px = 13.0
+ax.add_patch(Rectangle((px, 1.1), 1.1, 3.9, facecolor='#ff6b6b', edgecolor='#a00000'))
+ax.add_patch(Rectangle((px - 0.15, 5.0), 1.4, 0.55, facecolor='#ff9b9b', edgecolor='#a00000'))
+ax.annotate('', xy=(px + 0.4, 7.1), xytext=(px + 0.4, 5.7),
+            arrowprops=dict(arrowstyle='-|>', color='#a00000', lw=1.4))
+ax.text(px + 0.4, 7.3, '配网键 单击', fontsize=7.4, ha='center', color='#a00000')
 # OLED 立式屏:90°弯排针焊在板左端焊盘,屏体竖立,显示面朝左(板外/前方)
 ax.add_patch(Rectangle((3, 4.54), 1.6, 15.5, facecolor='#1a1a1a', edgecolor='#000', lw=1))
 ax.add_patch(Rectangle((3, 6.4), 1.6, 11.7, facecolor='#103a5c', edgecolor='#0a2740'))  # 有效显示区
@@ -267,11 +268,11 @@ ax.text(0.3, 13.4, '显示面朝前', fontsize=8, ha='center', va='bottom', colo
 ax.text(0.3, 10.9, '0.96" OLED 立式', fontsize=7.6, ha='center', va='top', color='#c0392b')
 ax.text(2.9, -0.2, '90°弯排针', fontsize=7, ha='left', va='top', color='#7a5c00')
 # 说明
-ax.text(12.5, -1.3, '屏幕竖在板边朝前显示；按键从顶面按 —— 两者互不遮挡，无需翻面',
+ax.text(12.5, -1.3, '屏幕立式朝前显示；配网键单击进配网；复位直接断电，无需 RESET 键',
         fontsize=8.6, ha='center', color='#333')
 ax.set_xlim(-9, 26); ax.set_ylim(-2.0, 21.5)
 ax.set_aspect('equal'); ax.axis('off')
-ax.set_title('装配侧视 — 屏幕立式 / 按键朝上', fontsize=11, pad=8)
+ax.set_title('装配侧视 — 屏幕立式 / 单个配网键', fontsize=11, pad=8)
 plt.tight_layout()
 plt.savefig(os.path.join(HERE, 'preview_assembly.png'), dpi=170, facecolor='white')
 plt.close()
