@@ -6,6 +6,7 @@
 #include <WiFi.h>
 #include <vector>
 #include "config.h"
+#include "portal.h"
 #include "qmodem_client.h"
 #include "ui.h"
 
@@ -21,17 +22,48 @@ static uint32_t s_lastFull = 0, s_lastLive = 0, s_lastSec = 0, s_lastMs = 0;
 static String s_lastErr;
 static bool s_liveOk = false;
 static String s_liveRat;
+static PortalConfig s_cfg;
 
-static void wifiConnect() {
+// 配网状态回调:屏幕显示提示
+static void portalStatus(const String& s) {
+  s_ui.boot(s);
+}
+
+// 进入配网(阻塞,提交后自动重启)
+static void enterPortal() {
+  WiFi.mode(WIFI_AP_STA);
+  Portal::start(s_cfg, portalStatus);
+}
+
+// 长按 BOOT 键检测(运行时重配入口)
+static void checkPortalButton() {
+#if CFG_PORTAL_PIN >= 0
+  static uint32_t held = 0;
+  pinMode(CFG_PORTAL_PIN, INPUT_PULLUP);
+  if (digitalRead(CFG_PORTAL_PIN) == LOW) {
+    if (held == 0) held = millis();
+    if (millis() - held >= CFG_PORTAL_HOLD_MS) {
+      held = 0;
+      enterPortal();  // 不会返回
+    }
+  } else {
+    held = 0;
+  }
+#endif
+}
+
+// 返回是否连上;连不上由调用方决定是否进配网
+static bool wifiConnect() {
   s_ui.boot("连接 WiFi…");
   WiFi.mode(WIFI_STA);
   WiFi.setSleep(false);
-  WiFi.begin(CFG_WIFI_SSID, CFG_WIFI_PASS);
+  WiFi.begin(s_cfg.wifiSsid, s_cfg.wifiPass);
   uint32_t t0 = millis();
   while (WiFi.status() != WL_CONNECTED) {
     if (millis() - t0 > 20000) break;
     delay(200);
   }
+  return WiFi.status() == WL_CONNECTED;
 }
 
 static String findAnyWrap(const char* key) {
@@ -119,17 +151,31 @@ void setup() {
   Serial.begin(115200);
   s_ui.begin();
   s_ui.boot("启动中…");
-  wifiConnect();
 
-  s_client = new QModemClient(CFG_ROUTER_URL, CFG_ROUTER_USER, CFG_ROUTER_PASS);
+  // 1) 读 NVS 配置;首次开机(无配置)直接进配网
+  if (!ConfigStore::load(s_cfg)) {
+    s_cfg.routerUrl = CFG_ROUTER_URL;   // 路由器字段给个默认值,WiFi 留空等用户填
+    s_cfg.routerUser = CFG_ROUTER_USER;
+    enterPortal();  // 阻塞,提交后重启
+  }
+
+  // 2) 连 WiFi;连不上(密码错/信号问题)也进配网让用户重填
+  if (!wifiConnect()) {
+    enterPortal();
+  }
+
+  s_client = new QModemClient(s_cfg.routerUrl, s_cfg.routerUser, s_cfg.routerPass);
   s_ui.boot("连接路由器…");
 
   String err;
+  uint32_t t0 = millis();
   while (true) {
-    if (WiFi.status() == WL_CONNECTED && s_client->connect(err)) break;
-    s_ui.renderError("连接失败", err.length() ? err : String("无法连接路由器"));
-    delay(8000);
-    if (WiFi.status() != WL_CONNECTED) { wifiConnect(); }
+    if (s_client->connect(err)) break;
+    // 路由器连续连不上超过 60 秒 → 进配网重填路由器地址/密码
+    if (millis() - t0 > 60000) { enterPortal(); }
+    s_ui.renderError("连接路由器失败", err.length() ? err : String("检查地址/账号"));
+    delay(3000);
+    if (WiFi.status() != WL_CONNECTED && !wifiConnect()) { enterPortal(); }
   }
 
   s_ui.boot("获取模组信息…");
@@ -141,12 +187,16 @@ void setup() {
 void loop() {
   uint32_t now = millis();
 
-  // WiFi 掉线自动重连
+  // 长按 BOOT 键 3 秒 → 重新配网
+  checkPortalButton();
+
+  // WiFi 掉线自动重连;长时间连不上进配网
   if (WiFi.status() != WL_CONNECTED) {
     s_ui.wifiLost();
     WiFi.reconnect();
     uint32_t t0 = millis();
     while (WiFi.status() != WL_CONNECTED && millis() - t0 < 15000) delay(300);
+    if (WiFi.status() != WL_CONNECTED) { enterPortal(); }
     return;
   }
 

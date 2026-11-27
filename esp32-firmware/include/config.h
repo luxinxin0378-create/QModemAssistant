@@ -18,3 +18,10 @@
 #define CFG_FULL_INTERVAL_MS  30000
 #define CFG_LIVE_INTERVAL_MS  10000
 #define CFG_AT_FAIL_LIMIT     3
+
+// ---- 配网 ----
+// 首次开机或 WiFi 连不上时,设备会自动开热点 "QModem-Setup" 让你用手机配置(见 README)
+// 运行时长按这个引脚(BOOT 键)3 秒可随时重新配网;大多数板子的 BOOT = GPIO0
+// 若你的板子 BOOT 脚不同,改这里;设为 -1 可禁用长按重配
+#define CFG_PORTAL_PIN  0
+#define CFG_PORTAL_HOLD_MS  3000
