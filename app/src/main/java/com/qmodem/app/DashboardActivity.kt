@@ -70,6 +70,12 @@ class DashboardActivity : AppCompatActivity() {
     private var loading = false
     private val timeFmt = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
 
+    // 功能页所需的连接参数
+    private var clientHost = ""
+    private var clientPort = 80
+    private var clientUser = "root"
+    private var clientPass = ""
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_dashboard)
@@ -78,6 +84,7 @@ class DashboardActivity : AppCompatActivity() {
         val port = intent.getIntExtra(EXTRA_PORT, 80)
         val user = intent.getStringExtra(EXTRA_USER) ?: "root"
         val pass = intent.getStringExtra(EXTRA_PASS) ?: ""
+        clientHost = host; clientPort = port; clientUser = user; clientPass = pass
 
         client = LuciClient(host, port, user, pass)
 
@@ -98,6 +105,19 @@ class DashboardActivity : AppCompatActivity() {
 
         // 纯 Toolbar 模式：返回键 + 菜单（手动刷新 / 自动刷新开关）
         toolbar.setNavigationOnClickListener { finish() }
+        // 左上角功能菜单：收纳 qmodem 设置/调试功能，点开展开
+        val toolsBtn = androidx.appcompat.widget.AppCompatImageButton(this).apply {
+            setImageResource(R.drawable.ic_tools)
+            setBackgroundResource(android.R.color.transparent)
+            contentDescription = "功能菜单"
+            setOnClickListener { showToolsMenu(it) }
+        }
+        toolbar.addView(
+            toolsBtn,
+            androidx.appcompat.widget.Toolbar.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { gravity = Gravity.START or Gravity.CENTER_VERTICAL; leftMargin = 8.dp() }
+        )
         toolbar.inflateMenu(R.menu.menu_dashboard)
         val autoItem = toolbar.menu.findItem(R.id.action_auto_refresh)
         val switchView = autoItem.actionView
@@ -139,6 +159,95 @@ class DashboardActivity : AppCompatActivity() {
     private fun setupModemLabel() {
         val text = currentModem?.let { getString(R.string.modem_prefix, it.name) } ?: ""
         btnModem.text = text
+    }
+
+    private fun Int.dp(): Int = (this * resources.displayMetrics.density).toInt()
+
+    // ------------------------------------------------------------------
+    // 左上角功能菜单
+    // ------------------------------------------------------------------
+
+    private fun showToolsMenu(anchor: View) {
+        val popup = PopupMenu(this, anchor)
+        popup.menu.apply {
+            add(0, 1, 0, "🛠 AT 命令调试")
+            add(0, 2, 1, "📶 网络与拨号设置")
+            add(0, 3, 2, "🔄 重启模组")
+        }
+        popup.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                1 -> openAtDebug()
+                2 -> openNetworkSettings()
+                3 -> confirmReboot()
+            }
+            true
+        }
+        popup.show()
+    }
+
+    private fun toolIntent(cls: Class<*>) = android.content.Intent(this, cls).apply {
+        putExtra("host", clientHost)
+        putExtra("port", clientPort)
+        putExtra("user", clientUser)
+        putExtra("pass", clientPass)
+        currentModem?.let {
+            putExtra("modem_id", it.id)
+            it.atPort?.let { p -> putExtra("modem_at_port", p) }
+        }
+    }
+
+    private fun openAtDebug() {
+        startActivity(toolIntent(AtDebugActivity::class.java))
+    }
+
+    private fun openNetworkSettings() {
+        startActivity(toolIntent(NetworkSettingsActivity::class.java))
+    }
+
+    private fun confirmReboot() {
+        val modem = currentModem ?: return
+        lifecycleScope.launch {
+            val caps = try {
+                withContext(Dispatchers.IO) { client.getRebootCaps(modem) }
+            } catch (e: Exception) {
+                true to false
+            }
+            val msg = StringBuilder("将重启模组 ${modem.name}，重启期间会断网，确定继续？")
+            if (caps.second) {
+                msg.append("\n\n软重启：AT 指令重启模组（推荐）\n硬重启：断电重启（仅支持时可用）")
+            }
+            val dlg = androidx.appcompat.app.AlertDialog.Builder(this@DashboardActivity)
+                .setTitle("重启模组")
+                .setMessage(msg)
+                .setPositiveButton(if (caps.second) "软重启" else "重启") { _, _ ->
+                    lifecycleScope.launch {
+                        try {
+                            withContext(Dispatchers.IO) { client.doReboot(modem, "soft") }
+                            toast("已发送软重启命令，等待模组恢复…")
+                        } catch (e: Exception) {
+                            toast("重启失败：${e.message}")
+                        }
+                    }
+                }
+                .setNegativeButton("取消", null)
+            if (caps.second) {
+                dlg.setNeutralButton("硬重启") { _, _ ->
+                    lifecycleScope.launch {
+                        try {
+                            withContext(Dispatchers.IO) { client.doReboot(modem, "hard") }
+                            toast("已发送硬重启命令，等待模组恢复…")
+                        } catch (e: Exception) {
+                            toast("重启失败：${e.message}")
+                        }
+                    }
+                }
+            }
+            dlg.show()
+        }
+    }
+
+    private fun toast(msg: String) {
+        android.widget.Toast.makeText(this, msg, android.widget.Toast.LENGTH_SHORT).show()
     }
 
     private fun showModemMenu() {

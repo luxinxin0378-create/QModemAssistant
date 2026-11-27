@@ -5,7 +5,7 @@
 
 ## 安装
 
-1. 将 `QModemAssistant-v1.0.1.apk` 传到手机（微信 / QQ / USB 均可）；
+1. 将 `QModemAssistant-v1.0.0.apk` 传到手机（微信 / QQ / USB 均可）；
 2. 点击安装（如提示"未知来源应用"，允许一次即可；APK 已用自签名证书正式签名）；
 3. 要求 Android 7.0（API 24）及以上。
 
@@ -70,19 +70,7 @@ QModemAssistant/
 │   ├── store/DeviceStore.kt     # 保存设备（SharedPreferences，密码 Base64 混淆存储）
 │   └── ui/GaugeView.kt          # 弧形信号仪表控件
 ├── app/src/test/                # JVM 单元测试（MockWebServer 模拟路由器）
-└── (keystore 不入库，见下方「生成签名密钥」)
-```
-
-## 生成签名密钥
-
-仓库不包含签名密钥，构建 release 前先生成（密码自行设定）：
-
-```bash
-mkdir -p keystore
-keytool -genkeypair -v -keystore keystore/qmodem.keystore -alias qmodem \
-  -keyalg RSA -keysize 2048 -validity 10950 \
-  -storepass 你的密码 -keypass 你的密码 \
-  -dname "CN=QModem Assistant, OU=Dev, O=QModem, L=Beijing, ST=Beijing, C=CN"
+└── keystore/qmodem.keystore     # 签名密钥（storepass/keypass：qmodem2026）
 ```
 
 ## 从源码构建

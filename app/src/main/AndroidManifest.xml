@@ -27,6 +27,17 @@
             android:name=".DashboardActivity"
             android:exported="false"
             android:parentActivityName=".MainActivity" />
+
+        <activity
+            android:name=".AtDebugActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize"
+            android:parentActivityName=".DashboardActivity" />
+
+        <activity
+            android:name=".NetworkSettingsActivity"
+            android:exported="false"
+            android:parentActivityName=".DashboardActivity" />
     </application>
 
 </manifest>

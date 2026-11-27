@@ -19,4 +19,10 @@
         <item name="android:textColor">@color/badge_text</item>
         <item name="android:gravity">center</item>
     </style>
+
+    <style name="ToolbarTitle" parent="TextAppearance.Material3.TitleLarge">
+        <item name="android:textSize">19sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/text_main</item>
+    </style>
 </resources>

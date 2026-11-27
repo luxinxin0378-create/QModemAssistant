@@ -32,7 +32,90 @@ class LuciClientTest {
     var ubusEndpointEnabled = false        // /ubus 直连是否可用
     var failUbusProxy = false              // admin/ubus 是否不可用（旧版回退）
     var expireNextRequest = false          // 下一次请求返回 401
+    var dialRunning = false                // dial_status 返回值
     private val validSessions = mutableSetOf("sessAAAAAAAAAAAAAAAAAAAAAAAAAA1")
+    // 记录最近收到的写操作参数（用于断言）
+    private var lastAtCmd: String? = null
+    private var lastAtPort: String? = null
+    private var lastPrefer: org.json.JSONArray? = null
+    private var lastUsbMode: String? = null
+    private var lastRebootMethod: String? = null
+
+    /** 模拟 ubus 对象 qmodem 的各方法返回（/ubus 直连与 admin/ubus 代理共用） */
+    private fun qmodemMock(method: String, params: JSONArray): MockResponse {
+        return when (method) {
+            "get_at_cfg" -> rpcOk(
+                JSONObject().put(
+                    "at_cfg",
+                    JSONObject()
+                        .put("ports", JSONArray().put("/dev/ttyUSB2").put("/dev/ttyUSB3"))
+                        .put("valid_ports", JSONArray().put("/dev/ttyUSB2"))
+                        .put("other_ttys", JSONArray().put("/dev/ttyUSB0"))
+                        .put("at_port", "/dev/ttyUSB2")
+                )
+            )
+            "send_at" -> {
+                val p = params.getJSONObject(3).getJSONObject("params")
+                lastAtCmd = p.getString("at")
+                lastAtPort = p.getString("port")
+                rpcOk(
+                    JSONObject().put(
+                        "at_cfg",
+                        JSONObject()
+                            .put("status", "1")
+                            .put("cmd", "at ${p.getString("port")} ${p.getString("at")}")
+                            .put("res", "OK\nmock response")
+                    )
+                )
+            }
+            "get_network_prefer" -> rpcOk(
+                JSONObject().put(
+                    "network_prefer",
+                    JSONObject().put("3G", "false").put("4G", "true").put("5G", "true")
+                )
+            )
+            "set_network_prefer" -> {
+                lastPrefer = params.getJSONObject(3).getJSONArray("params")
+                rpcOk(JSONObject())
+            }
+            "get_mode" -> rpcOk(
+                JSONObject().put(
+                    "mode",
+                    JSONObject().put("qmi", "0").put("ecm", "0")
+                        .put("mbim", "1").put("rndis", "0").put("ncm", "0")
+                )
+            )
+            "set_mode" -> {
+                lastUsbMode = params.getJSONObject(3).getString("mode")
+                rpcOk(JSONObject())
+            }
+            "dial_status" -> rpcOk(JSONObject().put("running", dialRunning))
+            "modem_dial", "modem_hang", "modem_redial" -> rpcOk(
+                JSONObject().put(
+                    "result",
+                    JSONObject().put("status", "1").put("message", "ok")
+                )
+            )
+            "get_dial_log" -> rpcOk(JSONObject().put("log", "2026-11-27 dial start\nconnected"))
+            "clear_dial_log" -> rpcOk(JSONObject())
+            "get_reboot_caps" -> rpcOk(
+                JSONObject().put(
+                    "reboot_caps",
+                    JSONObject().put("soft_reboot_caps", 1).put("hard_reboot_caps", 1)
+                )
+            )
+            "do_reboot" -> {
+                lastRebootMethod = params.getJSONObject(3).getJSONObject("params").getString("method")
+                rpcOk(
+                    JSONObject().put(
+                        "result",
+                        JSONObject().put("status", "1").put("method", lastRebootMethod)
+                    )
+                )
+            }
+            else -> rpcOk(JSONObject().put("modem_info", sampleModemInfo()))
+        }
+    }
 
     private fun entry(
         key: String, value: String, fullName: String, type: String = "plain_text",
@@ -136,7 +219,7 @@ class LuciClientTest {
                         }
                     }
                     if (obj == "qmodem") {
-                        return rpcOk(JSONObject().put("modem_info", sampleModemInfo()))
+                        return qmodemMock(method, params)
                     }
                     if (obj == "uci") {
                         return rpcOk(uciValues())
@@ -174,8 +257,9 @@ class LuciClientTest {
                         return MockResponse().setResponseCode(401)
                     }
                     val obj = params.getString(1)
+                    val method = params.getString(2)
                     return when {
-                        obj == "qmodem" -> rpcOk(JSONObject().put("modem_info", sampleModemInfo()))
+                        obj == "qmodem" -> qmodemMock(method, params)
                         obj == "uci" -> rpcOk(uciValues())
                         else -> rpcErr(4)
                     }
@@ -477,5 +561,94 @@ class LuciClientTest {
             )
         )
         assertEquals("中国联通", InfoAnalyzer.operator(es))
+    }
+
+    // ---------------- qmodem 功能（设置/调试） ----------------
+
+    private fun connectedClient(): LuciClient {
+        val c = client()
+        c.connect()
+        return c
+    }
+
+    @Test
+    fun `at config loads ports and send_at returns response`() {
+        val c = connectedClient()
+        val modem = c.getModems().first()
+        val cfg = c.getAtConfig(modem)
+        assertTrue(cfg.ports.contains("/dev/ttyUSB2"))
+        assertEquals("/dev/ttyUSB2", cfg.defaultPort)
+        val res = c.sendAt(modem, "AT+CSQ", "/dev/ttyUSB2")
+        assertTrue(res.contains("OK"))
+        assertTrue(res.contains("mock response"))
+    }
+
+    @Test
+    fun `network prefer get and set`() {
+        val c = connectedClient()
+        val modem = c.getModems().first()
+        val prefer = c.getNetworkPrefer(modem)
+        assertEquals(false, prefer["3G"])
+        assertEquals(true, prefer["4G"])
+        assertEquals(true, prefer["5G"])
+        c.setNetworkPrefer(modem, listOf("4G", "5G"))
+        assertNotNull(lastPrefer)
+        assertEquals(2, lastPrefer!!.length())
+        assertEquals("4G", lastPrefer!!.getString(0))
+        assertEquals("5G", lastPrefer!!.getString(1))
+    }
+
+    @Test
+    fun `usb mode get and set`() {
+        val c = connectedClient()
+        val modem = c.getModems().first()
+        val (cur, all) = c.getUsbMode(modem)
+        assertEquals("mbim", cur)
+        assertTrue(all.contains("qmi"))
+        c.setUsbMode(modem, "rndis")
+        assertEquals("rndis", lastUsbMode)
+    }
+
+    @Test
+    fun `dial control status action and log`() {
+        val c = connectedClient()
+        val modem = c.getModems().first()
+        assertFalse(c.dialStatus(modem))
+        dialRunning = true
+        assertTrue(c.dialStatus(modem))
+        assertTrue(c.dialAction(modem, "modem_dial"))
+        assertTrue(c.dialAction(modem, "modem_redial"))
+        val log = c.getDialLog(modem)
+        assertTrue(log.contains("dial start"))
+        c.clearDialLog(modem)
+    }
+
+    @Test
+    fun `reboot caps and do reboot`() {
+        val c = connectedClient()
+        val modem = c.getModems().first()
+        val (soft, hard) = c.getRebootCaps(modem)
+        assertTrue(soft)
+        assertTrue(hard)
+        c.doReboot(modem, "soft")
+        assertEquals("soft", lastRebootMethod)
+        c.doReboot(modem, "hard")
+        assertEquals("hard", lastRebootMethod)
+    }
+
+    @Test
+    fun `features rejected on legacy backend`() {
+        failUbusProxy = true
+        val c = client()
+        c.connect()
+        assertEquals(Backend.LEGACY_HTTP, c.backend)
+        val modem = c.getModems().first()
+        var msg: String? = null
+        try {
+            c.getAtConfig(modem)
+        } catch (e: LuciClient.FeatureException) {
+            msg = e.message
+        }
+        assertTrue(msg!!.contains("旧版"))
     }
 }

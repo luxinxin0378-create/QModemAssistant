@@ -13,4 +13,9 @@
     <color name="badge_text">#334155</color>
     <color name="banner_bg">#FEF2F2</color>
     <color name="launcher_bg">#0F172A</color>
+    <color name="page_bg">#F8FAFC</color>
+    <color name="toolbar_bg">#FDFDFE</color>
+    <color name="text_main">#0F172A</color>
+    <color name="excellent">#10B981</color>
+    <color name="poor">#EF4444</color>
 </resources>

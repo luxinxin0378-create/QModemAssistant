@@ -1,0 +1,292 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/page_bg">
+
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        android:background="@color/toolbar_bg"
+        app:title="网络与拨号设置"
+        app:navigationIcon="@drawable/ic_back"
+        app:titleTextAppearance="@style/ToolbarTitle" />
+
+    <androidx.core.widget.NestedScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="12dp">
+
+            <!-- 网络制式偏好 -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="12dp"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="0dp"
+                app:strokeWidth="1dp"
+                app:strokeColor="@color/card_stroke"
+                app:cardBackgroundColor="@color/card_bg">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="网络制式偏好"
+                        android:textSize="15sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/primary"
+                        android:layout_marginBottom="4dp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="控制模组启用哪些制式（如仅 4G 省电、4G/5G 双待）。切换后模组会短暂重连。"
+                        android:textSize="12sp"
+                        android:textColor="@color/neutral_text"
+                        android:layout_marginBottom="10dp" />
+
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/sw3g"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="3G（WCDMA）"
+                        android:textSize="14sp"
+                        android:layout_marginBottom="6dp" />
+
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/sw4g"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="4G（LTE）"
+                        android:textSize="14sp"
+                        android:layout_marginBottom="6dp" />
+
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/sw5g"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="5G（NR SA/NSA）"
+                        android:textSize="14sp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnSavePrefer"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:text="保存制式偏好"
+                        android:textSize="14sp" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- USB 网络模式 -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="12dp"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="0dp"
+                app:strokeWidth="1dp"
+                app:strokeColor="@color/card_stroke"
+                app:cardBackgroundColor="@color/card_bg">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="USB 网络模式"
+                        android:textSize="15sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/primary"
+                        android:layout_marginBottom="4dp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="模组与路由器之间的数据协议（QMI/ECM/MBIM/RNDIS/NCM）。切换后需重新拨号或重启模组。"
+                        android:textSize="12sp"
+                        android:textColor="@color/neutral_text"
+                        android:layout_marginBottom="8dp" />
+
+                    <TextView
+                        android:id="@+id/tvUsbModeCur"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="当前模式：读取中…"
+                        android:textSize="13sp"
+                        android:textStyle="bold"
+                        android:layout_marginBottom="8dp" />
+
+                    <RadioGroup
+                        android:id="@+id/radioModes"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnApplyMode"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="应用所选模式"
+                        android:textSize="14sp" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- 拨号控制 -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="12dp"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="0dp"
+                app:strokeWidth="1dp"
+                app:strokeColor="@color/card_stroke"
+                app:cardBackgroundColor="@color/card_bg">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="拨号控制"
+                        android:textSize="15sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/primary"
+                        android:layout_marginBottom="8dp" />
+
+                    <TextView
+                        android:id="@+id/tvDialStatus"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="● 检查中…"
+                        android:textSize="14sp"
+                        android:textStyle="bold"
+                        android:layout_marginBottom="10dp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnDial"
+                            style="@style/Widget.Material3.Button.TonalButton"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="拨号"
+                            android:textSize="13sp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnHang"
+                            style="@style/Widget.Material3.Button.TonalButton"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginStart="8dp"
+                            android:text="挂断"
+                            android:textSize="13sp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnRedial"
+                            style="@style/Widget.Material3.Button.TonalButton"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginStart="8dp"
+                            android:text="重拨"
+                            android:textSize="13sp" />
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- 拨号日志 -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="0dp"
+                app:strokeWidth="1dp"
+                app:strokeColor="@color/card_stroke"
+                app:cardBackgroundColor="@color/card_bg">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="拨号日志"
+                        android:textSize="15sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/primary"
+                        android:layout_marginBottom="8dp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:layout_marginBottom="8dp">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnLoadLog"
+                            style="@style/Widget.Material3.Button.OutlinedButton"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="加载日志"
+                            android:textSize="13sp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnClearLog"
+                            style="@style/Widget.Material3.Button.OutlinedButton"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginStart="8dp"
+                            android:text="清除日志"
+                            android:textSize="13sp" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/tvDialLog"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:typeface="monospace"
+                        android:textSize="11sp"
+                        android:textColor="@color/text_main"
+                        android:background="@drawable/bg_log"
+                        android:padding="10dp"
+                        android:text="点击「加载日志」查看拨号过程。" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
+</LinearLayout>

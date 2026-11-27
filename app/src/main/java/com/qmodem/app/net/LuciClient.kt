@@ -512,6 +512,152 @@ class LuciClient(
     }
 
     // ------------------------------------------------------------------
+    // qmodem 设置/调试功能（新版 ubus qmodem 专属）
+    // ------------------------------------------------------------------
+
+    /** 功能操作失败（旧版不支持/执行失败） */
+    class FeatureException(message: String) : Exception(message)
+
+    /** AT 端口配置 */
+    data class AtConfig(
+        val ports: List<String>,
+        val defaultPort: String?
+    )
+
+    private fun requireUbusQmodem() {
+        if (backend != Backend.UBUS_QMODEM) {
+            throw FeatureException("当前路由器为旧版 qmodem，不支持设置/调试功能（需新版 luci-app-qmodem）")
+        }
+    }
+
+    private fun stringArray(arr: JSONArray?): List<String> {
+        if (arr == null) return emptyList()
+        val out = ArrayList<String>()
+        for (i in 0 until arr.length()) {
+            val s = arr.optString(i, "").trim()
+            if (s.isNotEmpty()) out.add(s)
+        }
+        return out
+    }
+
+    private fun qmodemCall(method: String, args: JSONObject, section: String): JSONObject {
+        requireUbusQmodem()
+        return withSession {
+            ubusCall("qmodem", method, args.put("config_section", section))
+                ?: throw FeatureException("方法 $method 无响应")
+        }
+    }
+
+    /** 获取 AT 串口配置 */
+    fun getAtConfig(section: ModemSection): AtConfig {
+        val d = qmodemCall("get_at_cfg", JSONObject(), section.id)
+        val atCfg = d.optJSONObject("at_cfg") ?: d
+        val valid = stringArray(atCfg.optJSONArray("valid_ports"))
+        val ports = stringArray(atCfg.optJSONArray("ports"))
+        val others = stringArray(atCfg.optJSONArray("other_ttys"))
+        val def = sequenceOf(
+            atCfg.optString("at_port", ""),
+            section.atPort ?: "", ports.firstOrNull() ?: "", valid.firstOrNull() ?: ""
+        ).firstOrNull { it.isNotBlank() }
+        return AtConfig((valid + ports + others).distinct(), def)
+    }
+
+    /** 执行 AT 命令，返回模组响应文本 */
+    fun sendAt(section: ModemSection, at: String, port: String): String {
+        val inner = JSONObject()
+            .put("at", at)
+            .put("port", port)
+            .put("use_ubus_flag", "1")
+        val d = qmodemCall("send_at", JSONObject().put("params", inner), section.id)
+        val atCfg = d.optJSONObject("at_cfg") ?: d
+        if (atCfg.optString("status") != "1") {
+            throw FeatureException("AT 命令执行失败（模组或端口不可用）")
+        }
+        return atCfg.optString("res", "").trim()
+    }
+
+    /** 网络制式偏好，返回 "3G"/"4G"/"5G" → 是否启用 */
+    fun getNetworkPrefer(section: ModemSection): Map<String, Boolean> {
+        val d = qmodemCall("get_network_prefer", JSONObject(), section.id)
+        val np = d.optJSONObject("network_prefer") ?: d
+        val out = LinkedHashMap<String, Boolean>()
+        for (k in listOf("3G", "4G", "5G")) {
+            val v = np.optString(k, "")
+            if (v.isNotEmpty()) {
+                out[k] = v == "1" || v.equals("true", true)
+            }
+        }
+        return out
+    }
+
+    /** 设置网络制式偏好（启用的制式列表，如 ["4G","5G"]；至少保留一项） */
+    fun setNetworkPrefer(section: ModemSection, enabled: List<String>) {
+        val arr = JSONArray()
+        enabled.forEach { arr.put(it) }
+        qmodemCall("set_network_prefer", JSONObject().put("params", arr), section.id)
+    }
+
+    /** 当前 USB 网络模式（值为 "1" 的项），返回 (当前模式, 可选模式列表) */
+    fun getUsbMode(section: ModemSection): Pair<String, List<String>> {
+        val d = qmodemCall("get_mode", JSONObject(), section.id)
+        val mode = d.optJSONObject("mode") ?: d
+        var current: String? = null
+        val all = ArrayList<String>()
+        val keys = mode.names()
+        if (keys != null) {
+            for (i in 0 until keys.length()) {
+                val k = keys.optString(i)
+                all.add(k)
+                if (mode.optString(k) == "1") current = k
+            }
+        }
+        return (current ?: all.firstOrNull() ?: "") to all
+    }
+
+    /** 设置 USB 网络模式（qmi/ecm/mbim/rndis/ncm） */
+    fun setUsbMode(section: ModemSection, mode: String) {
+        qmodemCall("set_mode", JSONObject().put("mode", mode), section.id)
+    }
+
+    /** 拨号状态：true=运行中 */
+    fun dialStatus(section: ModemSection): Boolean {
+        val d = qmodemCall("dial_status", JSONObject(), section.id)
+        return d.optBoolean("running", false)
+    }
+
+    /** 拨号/挂断/重拨，返回是否成功 */
+    fun dialAction(section: ModemSection, action: String): Boolean {
+        val d = qmodemCall(action, JSONObject(), section.id)
+        val r = d.optJSONObject("result") ?: d
+        return r.optString("status") == "1"
+    }
+
+    /** 获取拨号日志 */
+    fun getDialLog(section: ModemSection): String {
+        val d = qmodemCall("get_dial_log", JSONObject(), section.id)
+        return d.optString("log", "").trim()
+    }
+
+    /** 清除拨号日志 */
+    fun clearDialLog(section: ModemSection) {
+        qmodemCall("clear_dial_log", JSONObject(), section.id)
+    }
+
+    /** 重启能力：(支持软重启, 支持硬重启) */
+    fun getRebootCaps(section: ModemSection): Pair<Boolean, Boolean> {
+        val d = qmodemCall("get_reboot_caps", JSONObject(), section.id)
+        val caps = d.optJSONObject("reboot_caps") ?: d
+        val soft = caps.optInt("soft_reboot_caps", 1) == 1
+        val hard = caps.optInt("hard_reboot_caps", 0) == 1
+        return soft to hard
+    }
+
+    /** 重启模组（method: soft/hard） */
+    fun doReboot(section: ModemSection, method: String) {
+        qmodemCall("do_reboot", JSONObject().put("params", JSONObject().put("method", method)), section.id)
+    }
+
+    // ------------------------------------------------------------------
     // 断开
     // ------------------------------------------------------------------
 
