@@ -21,7 +21,11 @@
 
 // ---- 配网 ----
 // 首次开机或 WiFi 连不上时,设备会自动开热点 "QModem-Setup" 让你用手机配置(见 README)
-// 两个按键分工: RESET(EN) 键=断电复位; 本引脚=配网键,单击一下立即进入配网
-// 大多数板子的 BOOT = GPIO0,即扩展板上的第二个按键;设为 -1 可禁用按键配网
+// 配网键单击一下立即进入配网;复位靠断电(拔电再上电),不设 RESET 按键
+// 默认 GPIO0 = 多数板子的板载 BOOT 键;
+// 用 OLED 扩展板时,板载 K1 配网键接在 IO4,由 s3mini_oled_096 环境用 -D 覆盖为 4
+// 设为 -1 可禁用按键配网
+#ifndef CFG_PORTAL_PIN
 #define CFG_PORTAL_PIN  0
+#endif
 #define CFG_PORTAL_DEBOUNCE_MS  40
