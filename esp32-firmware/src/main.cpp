@@ -35,19 +35,20 @@ static void enterPortal() {
   Portal::start(s_cfg, portalStatus);
 }
 
-// 长按 BOOT 键检测(运行时重配入口)
+// 配网键检测:单击一下(消抖)立即进入配网;RESET 键负责断电复位,两者分工
 static void checkPortalButton() {
 #if CFG_PORTAL_PIN >= 0
-  static uint32_t held = 0;
+  static uint32_t lastPress = 0;
   pinMode(CFG_PORTAL_PIN, INPUT_PULLUP);
   if (digitalRead(CFG_PORTAL_PIN) == LOW) {
-    if (held == 0) held = millis();
-    if (millis() - held >= CFG_PORTAL_HOLD_MS) {
-      held = 0;
-      enterPortal();  // 不会返回
+    if (lastPress == 0) lastPress = millis();
+    // 消抖:持续按下超过阈值即判定为一次有效单击(松开后需重新松开再按)
+    if (millis() - lastPress >= CFG_PORTAL_DEBOUNCE_MS) {
+      lastPress = 0;
+      enterPortal();  // 单击即进入配网,不会返回
     }
   } else {
-    held = 0;
+    lastPress = 0;
   }
 #endif
 }
@@ -187,7 +188,7 @@ void setup() {
 void loop() {
   uint32_t now = millis();
 
-  // 长按 BOOT 键 3 秒 → 重新配网
+  // 单击配网键(BOOT) → 立即进入配网
   checkPortalButton();
 
   // WiFi 掉线自动重连;长时间连不上进配网
