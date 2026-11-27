@@ -9,12 +9,12 @@ QModem OLED HAT — ESP32-S3 SuperMini 专用 0.96" IIC OLED 扩展板
   上排(Y=-7.62,左->右): 5V GND 3V3 13 12 11 10 9 8
   下排(Y=+7.62,左->右): TX RX 1 2 3 4 5 6 7
 
-扩展板设计(屏幕平放 + 板载单个配网键):
-  - 屏幕平放:OLED 用直排针焊在板顶(Y-端)焊盘,屏体朝板外平躺伸出,
-    显示面朝上可见;屏体伸到板外,不遮挡扩展板正面
-  - 配网键:扩展板正面焊一颗 6x6 轻触开关 K1,一端接 IO4(排针已引出),
-    一端接 GND;单击进 WiFi 配网
-  - 复位靠断电(拔电/断电重启)实现,不设 RESET 按键
+扩展板设计(屏幕平叠 + 加长板尾引出配网键):
+  - 板子加长到 22.52 x 42 mm:板顶放 OLED 焊盘,板尾加长段放配网键
+  - 屏幕平叠:OLED 用直排针焊在板顶焊盘,屏体平躺在扩展板正面上方,
+    显示面朝上;屏体覆盖 Y=-19~+8,不碰到板尾的配网键
+  - 配网键:板尾(Y=+15)焊一颗 6x6 轻触开关 K1,接 IO4(排针已引出)+GND,
+    单击进 WiFi 配网;复位靠断电(拔电/断电重启)实现,不设 RESET 按键
   - 底板 BOOT(GPIO0)/RESET(EN) 未引到排针,故不使用底板按键
   - OLED 接线: VCC<-3V3, GND<-GND, SCL<-IO9, SDA<-IO8 (与固件 s3mini_oled_096 一致)
 """
@@ -38,7 +38,7 @@ OUT = os.path.join(HERE, 'generated')
 os.makedirs(OUT, exist_ok=True)
 
 # ---------- 几何参数(mm) ----------
-BW, BH = 22.52, 26.00          # 扩展板宽(X,对底板)×高(Y,底部多8mm放丝印/余量)
+BW, BH = 22.52, 42.00         # 扩展板宽(X,对底板)×高(Y,加长到42:板顶放屏/板尾放键)
 ROWS, PITCH = 9, 2.54
 HY = 7.62                      # 排针行距的一半(15.24/2)
 X0 = (ROWS - 1) * PITCH / 2    # 10.16,最左/最右孔 X
@@ -49,29 +49,31 @@ BOT = ['TX','RX','1','2','3','4','5','6','7']          # Y=+7.62
 headers = [(x, -HY, TOP[i]) for i, x in enumerate(XS)] + \
           [(x, +HY, BOT[i]) for i, x in enumerate(XS)]
 
-# OLED 4 焊盘(板顶 Y-端,2.54 间距),直排针平放,屏体朝板外伸出、显示面朝上
-oled = [(-3.81, -9.80, 'GND'), (-1.27, -9.80, '3V3'),
-        (1.27, -9.80, 'SCL'), (3.81, -9.80, 'SDA')]
+# OLED 4 焊盘(板顶 Y=-18,2.54 间距),直排针把屏平叠在板上,显示面朝上
+oled = [(-3.81, -18.00, 'GND'), (-1.27, -18.00, '3V3'),
+        (1.27, -18.00, 'SCL'), (3.81, -18.00, 'SDA')]
 PAD_R, HOLE_R = 0.85, 0.50     # 焊盘半径 / 孔半径
+# 屏体平叠覆盖区(示意,27x27):Y=-19~+8,比 X 板宽略宽(屏幕模块本来就比板宽)
+SCREEN_BOX = (-13.5, -19.0, 27.0, 27.0)
 
-# 配网键 K1:6x6 轻触开关 4 焊盘(中心约 0,+2),同侧两脚为同一电极
+# 配网键 K1:板尾 Y=+15 一颗 6x6 轻触开关 4 焊盘(同侧两脚为同一电极)
 #   下侧两脚(GND) / 上侧两脚(SIG->IO4);按下时两组接通
-K1 = [(-2.0, 0.8, 'GND'), (2.0, 0.8, 'GND'),
-      (-2.0, 3.2, 'SIG'), (2.0, 3.2, 'SIG')]
+K1 = [(-2.0, 13.8, 'GND'), (2.0, 13.8, 'GND'),
+      (-2.0, 16.2, 'SIG'), (2.0, 16.2, 'SIG')]
 K1_PAD_R = 0.95                 # 开关焊盘半径
 IO4_PIN = (2.54, 7.62)          # 下排 IO4(配网键信号,排针已引出)
 GND_PIN = (-7.62, -7.62)        # 上排 GND
 
 # 底层走线:GND/3V3/SCL/SDA(OLED) + K1(SIG/GND),均绕开排针孔
 routes = [
-    ('GND', [(-7.62, -7.62), (-7.62, -9.00), (-3.81, -9.00), (-3.81, -9.80)]),
-    ('3V3', [(-5.08, -7.62), (-5.08, -8.60), (-1.27, -8.60), (-1.27, -9.80)]),
-    ('SCL', [(7.62, -7.62), (7.62, -9.40), (1.27, -9.40), (1.27, -9.80)]),
-    ('SDA', [(10.16, -7.62), (10.16, -10.20), (3.81, -10.20), (3.81, -9.80)]),
-    ('GND', [(-2.0, 0.8), (2.0, 0.8)]),                       # K1 下侧两脚同电极
-    ('GND', [(-2.0, 0.8), (-2.0, -5.0), (-7.62, -5.0), (-7.62, -7.62)]),
-    ('SIG', [(-2.0, 3.2), (2.0, 3.2)]),                       # K1 上侧两脚同电极
-    ('SIG', [(2.0, 3.2), (2.0, 5.5), (2.54, 5.5), (2.54, 7.62)]),
+    ('GND', [(-7.62, -7.62), (-3.81, -18.00)]),
+    ('3V3', [(-5.08, -7.62), (-1.27, -18.00)]),
+    ('SCL', [(7.62, -7.62), (1.27, -18.00)]),
+    ('SDA', [(10.16, -7.62), (3.81, -18.00)]),
+    ('GND', [(-2.0, 13.8), (2.0, 13.8)]),                                # K1 下侧两脚同电极
+    ('GND', [(-7.62, -7.62), (-9.0, -7.62), (-9.0, 13.8), (-2.0, 13.8)]),  # GND 沿左边缘到板尾
+    ('SIG', [(-2.0, 16.2), (2.0, 16.2)]),                                # K1 上侧两脚同电极
+    ('SIG', [(2.54, 7.62), (2.0, 7.62), (2.0, 16.2)]),                    # IO4 到 K1
 ]
 
 # ---------- Gerber 基础(FSLAX46Y46,单位 mm) ----------
@@ -170,15 +172,15 @@ for a, b in zip(outline, outline[1:]):
 for label, (px, py, name) in zip(['GND','3V3','SCL','SDA'], oled):
     for (x1, y1), (x2, y2) in text_segs(label, px - 1.1, py - 2.2, size=0.62):
         silk += segment(x1, y1, x2, y2, 13)
-# 配网键标注 CFG(放在 K1 右侧)
-for (x1, y1), (x2, y2) in text_segs('CFG', 4.6, 1.8, size=0.72):
+# 配网键标注 CFG(放在 K1 上方)
+for (x1, y1), (x2, y2) in text_segs('CFG', -1.6, 18.0, size=0.72):
     silk += segment(x1, y1, x2, y2, 13)
 # 排针丝印(上排/下排,沿板外方向排布)
 for x, y, n in headers:
     ny = y - 1.35 if y < 0 else y + 0.55
     for (x1, y1), (x2, y2) in text_segs(n, x - 0.9, ny, size=0.50):
         silk += segment(x1, y1, x2, y2, 13)
-for (x1, y1), (x2, y2) in text_segs('QM HAT S3', -4.2, 10.2, size=0.55, adv=0.9):
+for (x1, y1), (x2, y2) in text_segs('QM HAT S3', -4.2, 19.5, size=0.55, adv=0.9):
     silk += segment(x1, y1, x2, y2, 13)
 write('QModem_OLED_HAT-F_SilkS.gbr', silk)
 
@@ -188,7 +190,7 @@ for a, b in zip(outline, outline[1:]):
     edge += segment(a[0], a[1], b[0], b[1], 14)
 write('QModem_OLED_HAT-Edge_Cuts.gbr', edge)
 
-# ---------- Excellon 钻孔(单一孔径:排针18+OLED4+K1焊盘孔4=26) ----------
+# ---------- Excellon 钻孔(单一孔径:排针18+OLED4+K1焊盘4=26) ----------
 drl = ('M48\nMETRIC\n%%FSLAX33Y33*%%\n'
        'T01C%.3f\n%%\n' % (HOLE_R*2))
 drl += 'T01\n'
@@ -200,18 +202,18 @@ drl += 'M30\n'
 write('QModem_OLED_HAT.drl', drl)
 
 # ---------- 预览图:顶层布线 ----------
-fig, ax = plt.subplots(figsize=(8.2, 9.4))
+fig, ax = plt.subplots(figsize=(8.0, 10.5))
 poly = outline + [outline[0]]
 ax.plot([p[0] for p in poly], [p[1] for p in poly], color='#222', lw=2)
 # 底板轮廓(虚线,示意覆盖区)
 ax.add_patch(Rectangle((-BW/2, -9), BW, 18, fill=False, edgecolor='#999',
                        lw=1.2, ls=':', label='底板 ESP32-S3 SuperMini'))
-# 屏幕平放伸出示意(虚线框,朝 Y- 板外,截断显示)
-ax.add_patch(Rectangle((-13.5, -37.0), 27, 27.2, fill=False,
+# 屏幕平叠覆盖区(虚线框,平躺在板正面上方)
+sx, sy, sw, sh = SCREEN_BOX
+ax.add_patch(Rectangle((sx, sy), sw, sh, fill=False,
                        edgecolor='#c0392b', lw=1.6, ls='--'))
-ax.text(0, -24.0, '0.96" OLED 平放（显示面朝上，屏体朝板外伸出）',
+ax.text(0, -4.0, '0.96" OLED 平叠在板上（显示面朝上）',
         fontsize=9, ha='center', color='#c0392b', fontweight='bold')
-ax.text(0, -27.0, '（此处截断，实际屏体约 27mm）', fontsize=7.5, ha='center', color='#999')
 colors = {'GND':'#888', '3V3':'#e08a1e', 'SCL':'#2a9d8f', 'SDA':'#457b9d', 'SIG':'#c0392b'}
 for name, pts in routes:
     ax.plot([p[0] for p in pts], [p[1] for p in pts], color=colors[name], lw=1.9,
@@ -235,49 +237,50 @@ for x, y, n in K1:
                            facecolor='#ff9b9b', edgecolor='#a00000', lw=1.2))
     ax.add_patch(Circle((x, y), HOLE_R, facecolor='white', edgecolor='#a00000', lw=0.8))
     ax.text(x, y, n, fontsize=6.2, ha='center', va='center', color='#a00000', fontweight='bold')
-ax.text(0, 2.0, 'K1 配网键', fontsize=9, ha='center', color='#a00000', fontweight='bold')
-ax.set_title('QModem OLED HAT — 顶层 / 底层走线（虚线；屏幕平放伸出板外）', fontsize=11, pad=10)
-ax.text(0, 11.6, 'QM HAT S3', fontsize=8, ha='center', color='#555')
-ax.set_xlim(-15, 15); ax.set_ylim(-39, 13.5)
+ax.text(0, 18.2, 'K1 配网键（板尾，屏幕盖不到）', fontsize=9, ha='center', color='#a00000', fontweight='bold')
+ax.set_title('QModem OLED HAT — 顶层 / 底层走线（虚线；屏幕平叠、按键在板尾）', fontsize=11, pad=10)
+ax.set_xlim(-15, 15); ax.set_ylim(-23, 22)
 ax.set_aspect('equal'); ax.axis('off')
 ax.legend(loc='lower center', ncol=4, fontsize=7, frameon=False, bbox_to_anchor=(0.5, -0.01))
 plt.tight_layout()
 plt.savefig(os.path.join(HERE, 'preview_top.png'), dpi=170, facecolor='white')
 plt.close()
 
-# ---------- 预览图:装配侧视(屏幕平放、显示面朝上、配网键在板上) ----------
-fig, ax = plt.subplots(figsize=(11, 6.2))
-# 底板 S3 SuperMini
-ax.add_patch(Rectangle((3, 0), 19, 1.1, facecolor='#2f4f4f', edgecolor='#222', lw=1))
-ax.text(12.5, 0.55, 'S3 SuperMini 22.52×18mm', fontsize=7.8,
+# ---------- 预览图:装配侧视(横轴=板长方向:左板顶/右板尾) ----------
+fig, ax = plt.subplots(figsize=(11.5, 5.8))
+# 横轴:板 Y -21~+21 映射到图上 0~42(1mm=1单位)
+# 底板 S3 SuperMini:覆盖 Y=-9~+9 => x 12~30
+ax.add_patch(Rectangle((12, 0), 18, 1.1, facecolor='#2f4f4f', edgecolor='#222', lw=1))
+ax.text(21, 0.55, 'S3 SuperMini 22.52×18mm', fontsize=7.8,
         ha='center', va='center', color='white')
-# 排针(两处)
-for px in [7.0, 18.0]:
-    ax.add_patch(Rectangle((px, 1.1), 0.7, 2.44, facecolor='#c9a227', edgecolor='#7a5c00'))
-# 扩展板 HAT
-ax.add_patch(Rectangle((3, 3.54), 19, 1.0, facecolor='#3b82c4', edgecolor='#222', lw=1))
-ax.text(15.5, 4.04, 'OLED HAT（本扩展板）', fontsize=8, ha='center', va='center', color='white')
-# 屏幕平放:直排针把 OLED 顶起,屏体朝板外(左)平躺伸出,显示面朝上(+Z)
-ax.add_patch(Rectangle((4.2, 4.54), 0.7, 1.4, facecolor='#c9a227', edgecolor='#7a5c00'))  # 直排针
-ax.add_patch(Rectangle((-7.0, 5.94), 12.0, 1.2, facecolor='#1a1a1a', edgecolor='#000', lw=1))
-ax.add_patch(Rectangle((-7.0, 6.14), 12.0, 0.82, facecolor='#103a5c', edgecolor='#0a2740'))  # 显示区朝上
-ax.annotate('', xy=(-1.0, 8.2), xytext=(-1.0, 7.2),
+# 排针(两处,对应排针行)
+for px in [12, 30]:
+    ax.add_patch(Rectangle((px - 0.35, 1.1), 0.7, 2.44, facecolor='#c9a227', edgecolor='#7a5c00'))
+# 扩展板 HAT:板 Y -21~+21 => x 0~42
+ax.add_patch(Rectangle((0, 3.54), 42, 1.0, facecolor='#3b82c4', edgecolor='#222', lw=1))
+ax.text(21, 4.04, 'OLED HAT（本扩展板，已加长）', fontsize=8, ha='center', va='center', color='white')
+# OLED 直排针(板顶,图上 x≈3)
+ax.add_patch(Rectangle((2.6, 4.54), 0.7, 1.4, facecolor='#c9a227', edgecolor='#7a5c00'))
+# 屏幕平躺叠在板上:覆盖 Y=-19~+8 => x 2~29, z=5.94~7.14
+ax.add_patch(Rectangle((2, 5.94), 27, 1.2, facecolor='#1a1a1a', edgecolor='#000', lw=1))
+ax.add_patch(Rectangle((2, 6.14), 27, 0.82, facecolor='#103a5c', edgecolor='#0a2740'))
+ax.annotate('', xy=(15, 8.6), xytext=(15, 7.3),
             arrowprops=dict(arrowstyle='-|>', color='#c0392b', lw=1.6))
-ax.text(-1.0, 8.5, '显示面朝上（平放）', fontsize=8, ha='center', color='#c0392b')
-ax.text(-7.2, 6.6, '屏体朝板外伸出', fontsize=7.4, ha='right', va='center', color='#555')
-# 配网键 K1:贴片轻触开关焊在扩展板正面,向下按
-bx = 15.0
-ax.add_patch(Rectangle((bx - 1.5, 4.54), 3.0, 1.1, facecolor='#ff6b6b', edgecolor='#a00000'))
+ax.text(15, 8.9, '显示面朝上（平叠在板上）', fontsize=8.2, ha='center', color='#c0392b')
+# 配网键 K1:板尾 Y=+15 => x≈36,焊在扩展板正面,向下按
+bx = 36
+ax.add_patch(Rectangle((bx - 1.6, 4.54), 3.2, 1.1, facecolor='#ff6b6b', edgecolor='#a00000'))
 ax.text(bx, 5.1, 'K1', fontsize=7.6, ha='center', va='center', color='white', fontweight='bold')
-ax.annotate('', xy=(bx, 6.6), xytext=(bx, 5.7),
+ax.annotate('', xy=(bx, 6.9), xytext=(bx, 5.7),
             arrowprops=dict(arrowstyle='-|>', color='#a00000', lw=1.6))
-ax.text(bx, 6.9, '配网键 单击', fontsize=7.6, ha='center', color='#a00000')
+ax.text(bx, 7.2, '配网键 单击', fontsize=7.6, ha='center', color='#a00000')
+ax.text(bx, 3.0, '板尾加长段\n（屏幕盖不到）', fontsize=7.2, ha='center', va='top', color='#555')
 # 说明
-ax.text(6.0, -1.3, '屏幕平放（显示面朝上、屏体伸到板外不遮挡）· 扩展板板载 K1 配网键 · 复位直接断电',
-        fontsize=8.6, ha='center', color='#333')
-ax.set_xlim(-10, 26); ax.set_ylim(-2.0, 10.0)
+ax.text(21, -1.4, '屏幕平叠在板上（显示面朝上）· 板尾加长引出 K1 配网键 · 复位直接断电',
+        fontsize=8.8, ha='center', color='#333')
+ax.set_xlim(-4, 46); ax.set_ylim(-2.2, 10.2)
 ax.set_aspect('equal'); ax.axis('off')
-ax.set_title('装配侧视 — 屏幕平放 / 板载单个配网键', fontsize=11, pad=8)
+ax.set_title('装配侧视 — 屏幕平叠 / 板尾引出配网键', fontsize=11, pad=8)
 plt.tight_layout()
 plt.savefig(os.path.join(HERE, 'preview_assembly.png'), dpi=170, facecolor='white')
 plt.close()
