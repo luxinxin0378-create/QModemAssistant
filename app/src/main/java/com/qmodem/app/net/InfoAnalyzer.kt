@@ -391,4 +391,88 @@ object InfoAnalyzer {
         if (v.isEmpty() || v.equals("unknown", true)) return null
         return if (v.toDoubleOrNull() != null) "$v ℃" else v
     }
+
+    // ------------------------------------------------------------------
+    // AT+QENG="servingcell" 实时信号解析
+    // ------------------------------------------------------------------
+
+    private val NUM_TOKEN = Regex("-?\\d+(\\.\\d+)?")
+
+    /**
+     * 解析 AT+QENG="servingcell" 响应，返回 RSRP/RSRQ/SINR/RSSI 值（dB 系）。
+     *
+     * 支持的行格式（Quectel 兼容固件）：
+     *  - LTE：     +QENG: "servingcell","NOCONN","LTE","FDD",460,01,E256701,301,1300,3,20,20,20,-85,-10,-73,12,17
+     *              尾部数字 = rsrp, rsrq, rssi, sinr, srxlev
+     *  - NR5G-SA： +QENG: "servingcell","NOCONN","NR5G-SA","TDD",460,01,,,-,N/A,301,350,20,-85,-10,10
+     *              尾部数字 = rsrp, rsrq, sinr
+     *  - NR5G-NSA：同 NR5G-SA（另附 LTE 行，NSA 行优先）
+     *  - WCDMA：   尾部 5 个数字 = rssi, ecio, rscp, pathloss（取 rssi）
+     *  - GSM：     rssi = 最后一个数字
+     */
+    fun parseQeng(response: String): Map<String, Double> {
+        val out = LinkedHashMap<String, Double>()
+        val lines = response.split("\n").map { it.replace("\r", "").trim() }
+        var sawServingcell = false
+        for (line in lines) {
+            if (!line.contains("\"servingcell\"", true) && !line.contains("servingcell", true)) continue
+            if (!line.contains("QENG", true)) continue
+            sawServingcell = true
+            val tokens = NUM_TOKEN.findAll(line).map { it.value.toDouble() }.toList()
+            if (tokens.isEmpty()) continue
+            val mode = when {
+                line.contains("NR5G-SA", true) -> "NR5G-SA"
+                line.contains("NR5G-NSA", true) -> "NR5G-NSA"
+                line.contains("\"LTE\"", true) || line.contains(",LTE,", true) -> "LTE"
+                line.contains("WCDMA", true) -> "WCDMA"
+                line.contains("\"GSM\"", true) || line.contains(",GSM,", true) -> "GSM"
+                else -> ""
+            }
+            fun put(k: String, v: Double) { if (!out.containsKey(k)) out[k] = v }
+            when (mode) {
+                "NR5G-SA", "NR5G-NSA" -> {
+                    // 尾部 3 个数字 = rsrp / rsrq / sinr
+                    if (tokens.size >= 3) {
+                        val t = tokens.takeLast(3)
+                        put("RSRP", t[0]); put("RSRQ", t[1]); put("SINR", t[2])
+                    }
+                }
+                "LTE" -> {
+                    // 尾部 5 个数字 = rsrp / rsrq / rssi / sinr / srxlev
+                    if (tokens.size >= 5) {
+                        val t = tokens.takeLast(5)
+                        put("RSRP", t[0]); put("RSRQ", t[1]); put("RSSI", t[2]); put("SINR", t[3])
+                    } else if (tokens.size >= 4) {
+                        val t = tokens.takeLast(4)
+                        put("RSRP", t[0]); put("RSRQ", t[1]); put("RSSI", t[2]); put("SINR", t[3])
+                    }
+                }
+                "WCDMA" -> {
+                    // 尾部 4 个数字 = rssi / ecio / rscp / pathloss
+                    if (tokens.size >= 4) put("RSSI", tokens[tokens.size - 4])
+                }
+                "GSM" -> {
+                    put("RSSI", tokens.last())
+                }
+                else -> {
+                    // 无模式标记的 servingcell 行：尽量按 LTE/NR 尾部猜
+                    if (tokens.size >= 5) {
+                        val t = tokens.takeLast(5)
+                        put("RSRP", t[0]); put("RSRQ", t[1]); put("RSSI", t[2]); put("SINR", t[3])
+                    }
+                }
+            }
+        }
+        return if (sawServingcell || out.isNotEmpty()) out else emptyMap()
+    }
+
+    /** 解析 AT+CSQ 响应，返回 RSSI（dBm，-113 + 2*n） */
+    fun parseCsq(response: String): Map<String, Double> {
+        val m = Regex("\\+CSQ:\\s*(\\d+)\\s*,\\s*(\\d+)").find(response) ?: return emptyMap()
+        val rssi = m.groupValues[1].toInt()
+        if (rssi in 0..31) {
+            return mapOf("RSSI" to (-113.0 + 2 * rssi))
+        }
+        return emptyMap()
+    }
 }

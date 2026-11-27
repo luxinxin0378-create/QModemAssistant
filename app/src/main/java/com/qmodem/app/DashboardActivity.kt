@@ -70,6 +70,12 @@ class DashboardActivity : AppCompatActivity() {
     private var loading = false
     private val timeFmt = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
 
+    // 实时刷新状态
+    private var lastEntries: List<InfoEntry> = emptyList()
+    private var liveMode = true            // AT 直查实时信号；不可用时降级
+    private var atFailCount = 0
+    private var liveSignal: Map<String, Double> = emptyMap()
+
     // 功能页所需的连接参数
     private var clientHost = ""
     private var clientPort = 80
@@ -153,7 +159,6 @@ class DashboardActivity : AppCompatActivity() {
         setupModemLabel()
 
         startRefreshLoop()
-        loadInfo()
     }
 
     private fun setupModemLabel() {
@@ -257,29 +262,107 @@ class DashboardActivity : AppCompatActivity() {
             popup.menu.add(0, i, i, m.name)
         }
         popup.setOnMenuItemClickListener { item ->
-            modems.getOrNull(item.itemId)?.let { selectModem(it); loadInfo() }
+            modems.getOrNull(item.itemId)?.let { selectModem(it) }
             true
         }
         popup.show()
     }
 
     private fun selectModem(m: ModemSection) {
+        if (currentModem?.id == m.id && currentModem === m) return
         currentModem = m
+        // 切换模组：清空实时状态，立即拉取新模组数据
+        lastEntries = emptyList()
+        liveSignal = emptyMap()
+        atFailCount = 0
+        lastFullLoadAt = 0
         setupModemLabel()
+        loadInfo()
     }
 
     // ------------------------------------------------------------------
     // 数据加载
     // ------------------------------------------------------------------
 
+    /**
+     * 双通道刷新：
+     *  - 实时通道：每 2.5 秒 send_at 直查 AT+QENG="servingcell"，绕过 qmodem 后端 10 秒缓存，
+     *              只更新信号仪表与信号条（RSRP/RSRQ/SINR/RSSI）；
+     *  - 全量通道：每 12 秒拉一次 info（其余字段：频段/小区/运营商等，后端缓存 10s，12s 合适）。
+     * AT 连续 3 次失败则自动降级为纯全量模式。
+     */
     private fun startRefreshLoop() {
+        // 实时通道
         lifecycleScope.launch {
             while (isActive) {
-                delay(10_000)
-                if (autoRefresh && !loading && currentModem != null) loadInfo()
+                delay(2500)
+                if (autoRefresh && liveMode && !loading && currentModem != null) {
+                    val ok = refreshLive()
+                    if (!ok) {
+                        liveMode = false
+                        showBanner("模组不支持实时 AT 查询，已切换为常规刷新（约 10 秒一次）")
+                    }
+                }
+            }
+        }
+        // 全量通道
+        lifecycleScope.launch {
+            while (isActive) {
+                delay(2000)
+                if (autoRefresh && !loading && currentModem != null && fullNeedsLoad()) loadInfo()
             }
         }
     }
+
+    private var lastFullLoadAt = 0L
+
+    /** 全量信息是否需要重新拉取（12 秒周期；实时模式下首次仍需加载） */
+    private fun fullNeedsLoad(): Boolean {
+        val now = System.currentTimeMillis()
+        if (now - lastFullLoadAt >= 12_000) {
+            lastFullLoadAt = now
+            return true
+        }
+        return false
+    }
+
+    /** AT 直查实时信号；返回 false 表示彻底不可用（需降级） */
+    private suspend fun refreshLive(): Boolean {
+        val modem = currentModem ?: return false
+        return try {
+            val signal = withContext(Dispatchers.IO) { client.fetchLiveSignal(modem, modem.atPort) }
+            atFailCount = 0
+            if (signal != liveSignal) {
+                liveSignal = signal
+                applyLiveSignal()
+            }
+            true
+        } catch (e: Exception) {
+            atFailCount++
+            atFailCount < 3   // 偶发失败跳过本轮，连续 3 次才降级
+        }
+    }
+
+    /** 把实时信号合并进已加载的条目并重绘（频段/小区等字段保持不变） */
+    private fun applyLiveSignal() {
+        if (lastEntries.isEmpty()) return
+        val updated = lastEntries.map { e ->
+            val k = e.key.uppercase()
+            val v = when (k) {
+                "RSRP" -> liveSignal["RSRP"]
+                "RSRQ" -> liveSignal["RSRQ"]
+                "SINR" -> liveSignal["SINR"]
+                "RSSI" -> liveSignal["RSSI"]
+                else -> null
+            } ?: return@map e
+            e.copy(value = formatLiveValue(k, v))
+        }
+        lastEntries = updated
+        render(updated)
+    }
+
+    private fun formatLiveValue(k: String, v: Double): String =
+        if (k == "SINR") "%.1f".format(v) else "%.0f".format(v)
 
     private fun loadInfo() {
         val modem = currentModem ?: return
@@ -290,13 +373,32 @@ class DashboardActivity : AppCompatActivity() {
         lifecycleScope.launch {
             try {
                 val entries = withContext(Dispatchers.IO) { client.fetchInfo(modem) }
-                render(entries)
+                // 若已有实时信号，先合并再渲染，避免全量刷新把旧缓存信号盖回去
+                val merged = mergeLive(entries)
+                lastEntries = merged
+                render(merged)
             } catch (e: Exception) {
                 showBanner(e.message ?: getString(R.string.load_failed))
             } finally {
                 loading = false
                 swipe.isRefreshing = false
             }
+        }
+    }
+
+    /** 全量条目合并实时信号值 */
+    private fun mergeLive(entries: List<InfoEntry>): List<InfoEntry> {
+        if (liveSignal.isEmpty()) return entries
+        return entries.map { e ->
+            val k = e.key.uppercase()
+            val v = when (k) {
+                "RSRP" -> liveSignal["RSRP"]
+                "RSRQ" -> liveSignal["RSRQ"]
+                "SINR" -> liveSignal["SINR"]
+                "RSSI" -> liveSignal["RSSI"]
+                else -> null
+            } ?: return@map e
+            e.copy(value = formatLiveValue(k, v))
         }
     }
 

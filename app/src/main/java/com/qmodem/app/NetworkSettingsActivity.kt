@@ -19,6 +19,7 @@ import com.google.android.material.card.MaterialCardView
 import com.qmodem.app.model.ModemSection
 import com.qmodem.app.net.LuciClient
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
@@ -115,18 +116,29 @@ class NetworkSettingsActivity : AppCompatActivity() {
 
     private fun loadNetworkPrefer() {
         lifecycleScope.launch {
+            sw3g.isEnabled = false; sw4g.isEnabled = false; sw5g.isEnabled = false
             try {
-                val prefer = withContext(Dispatchers.IO) { client.getNetworkPrefer(modem) }
-                if (prefer.isEmpty()) throw LuciClient.FeatureException("模组不支持网络制式查询")
-                sw3g.isChecked = prefer["3G"] == true
-                sw4g.isChecked = prefer["4G"] == true
-                sw5g.isChecked = prefer["5G"] == true
-                val hidden = listOf("3G", "4G", "5G").filter { !prefer.containsKey(it) }
-                for (h in hidden) {
-                    when (h) {
-                        "3G" -> sw3g.visibility = View.GONE
-                        "5G" -> sw5g.visibility = View.GONE
+                val raw = withContext(Dispatchers.IO) { client.getNetworkPrefer(modem) }
+                if (raw.isEmpty()) throw LuciClient.FeatureException("模组未返回制式数据")
+                sw3g.isChecked = client.preferEnabled(raw["3G"])
+                sw4g.isChecked = client.preferEnabled(raw["4G"])
+                sw5g.isChecked = client.preferEnabled(raw["5G"])
+                sw3g.text = "3G（WCDMA）"; sw4g.text = "4G（LTE）"; sw5g.text = "5G（NR SA/NSA）"
+                for (k in listOf("3G", "4G", "5G")) {
+                    if (!raw.containsKey(k)) {
+                        when (k) {
+                            "3G" -> sw3g.visibility = View.GONE
+                            "4G" -> sw4g.visibility = View.GONE
+                            "5G" -> sw5g.visibility = View.GONE
+                        }
                     }
+                }
+                sw3g.isEnabled = true; sw4g.isEnabled = true; sw5g.isEnabled = true
+                btnSavePrefer.isEnabled = true
+                // 全 "0" 提示：多数为模组 AT 查询失败或命令不兼容（如 AT+QNWPREFCFG 无响应）
+                val allDisabled = raw.values.all { !client.preferEnabled(it) }
+                if (allDisabled) {
+                    toast("⚠ 模组返回制式全部关闭，可能是 AT 查询失败——可在「AT 命令调试」执行 AT+QNWPREFCFG=\"mode_pref\" 自查")
                 }
             } catch (e: Exception) {
                 sw3g.isEnabled = false; sw4g.isEnabled = false; sw5g.isEnabled = false
@@ -149,7 +161,9 @@ class NetworkSettingsActivity : AppCompatActivity() {
         lifecycleScope.launch {
             try {
                 withContext(Dispatchers.IO) { client.setNetworkPrefer(modem, enabled) }
-                toast("已保存：${enabled.joinToString("/")}（模组正在切换，可能短暂掉线）")
+                toast("已保存：${enabled.joinToString("/")}（模组正在切换，稍后自动回读）")
+                delay(3000)
+                loadNetworkPrefer()
             } catch (e: Exception) {
                 toast("保存失败：${e.message}")
             } finally {

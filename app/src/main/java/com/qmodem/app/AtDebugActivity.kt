@@ -54,6 +54,7 @@ class AtDebugActivity : AppCompatActivity() {
             "AT+CGSN",
             "AT+CIMI",
             "AT+QCCID",
+            "AT+QNWPREFCFG=\"mode_pref\"",
             "AT+QNWPREFCFG=\"policy\"",
             "AT+QNWPREFCFG=\"lte_band\"",
             "AT+QNWPREFCFG=\"nsa_band\"",

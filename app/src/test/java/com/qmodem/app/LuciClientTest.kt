@@ -33,6 +33,7 @@ class LuciClientTest {
     var failUbusProxy = false              // admin/ubus 是否不可用（旧版回退）
     var expireNextRequest = false          // 下一次请求返回 401
     var dialRunning = false                // dial_status 返回值
+    var preferArrayFormat = false          // get_network_prefer 返回数组包对象
     private val validSessions = mutableSetOf("sessAAAAAAAAAAAAAAAAAAAAAAAAAA1")
     // 记录最近收到的写操作参数（用于断言）
     private var lastAtCmd: String? = null
@@ -58,21 +59,36 @@ class LuciClientTest {
                 val p = params.getJSONObject(3).getJSONObject("params")
                 lastAtCmd = p.getString("at")
                 lastAtPort = p.getString("port")
+                val at = p.getString("at")
+                val res = when {
+                    at.contains("QENG") ->
+                        "+QENG: \"servingcell\",\"NOCONN\",\"LTE\",\"FDD\",460,01,E256701,301,1300,3,20,20,20,-85,-10,-73,12,17\n\nOK"
+                    at.contains("CSQ") -> "+CSQ: 25,99\n\nOK"
+                    else -> "OK\nmock response"
+                }
                 rpcOk(
                     JSONObject().put(
                         "at_cfg",
                         JSONObject()
                             .put("status", "1")
-                            .put("cmd", "at ${p.getString("port")} ${p.getString("at")}")
-                            .put("res", "OK\nmock response")
+                            .put("cmd", "at ${p.getString("port")} $at")
+                            .put("res", res)
                     )
                 )
             }
             "get_network_prefer" -> rpcOk(
-                JSONObject().put(
-                    "network_prefer",
-                    JSONObject().put("3G", "false").put("4G", "true").put("5G", "true")
-                )
+                if (preferArrayFormat) {
+                    // 某些固件 jshn 输出：数组包对象
+                    JSONObject().put(
+                        "network_prefer",
+                        JSONArray().put(JSONObject().put("3G", "1").put("4G", "0").put("5G", "1"))
+                    )
+                } else {
+                    JSONObject().put(
+                        "network_prefer",
+                        JSONObject().put("3G", "0").put("4G", "1").put("5G", "1")
+                    )
+                }
             )
             "set_network_prefer" -> {
                 lastPrefer = params.getJSONObject(3).getJSONArray("params")
@@ -578,24 +594,81 @@ class LuciClientTest {
         val cfg = c.getAtConfig(modem)
         assertTrue(cfg.ports.contains("/dev/ttyUSB2"))
         assertEquals("/dev/ttyUSB2", cfg.defaultPort)
+        // CSQ 命令 mock 返回真实格式，可校验解析链路
         val res = c.sendAt(modem, "AT+CSQ", "/dev/ttyUSB2")
-        assertTrue(res.contains("OK"))
-        assertTrue(res.contains("mock response"))
+        assertTrue(res.contains("+CSQ: 25,99"))
+        val other = c.sendAt(modem, "ATI", "/dev/ttyUSB2")
+        assertTrue(other.contains("mock response"))
     }
 
     @Test
     fun `network prefer get and set`() {
         val c = connectedClient()
         val modem = c.getModems().first()
-        val prefer = c.getNetworkPrefer(modem)
-        assertEquals(false, prefer["3G"])
-        assertEquals(true, prefer["4G"])
-        assertEquals(true, prefer["5G"])
+        val raw = c.getNetworkPrefer(modem)
+        assertEquals("0", raw["3G"])
+        assertEquals("1", raw["4G"])
+        assertEquals("1", raw["5G"])
+        assertFalse(c.preferEnabled(raw["3G"]))
+        assertTrue(c.preferEnabled(raw["4G"]))
         c.setNetworkPrefer(modem, listOf("4G", "5G"))
         assertNotNull(lastPrefer)
         assertEquals(2, lastPrefer!!.length())
         assertEquals("4G", lastPrefer!!.getString(0))
         assertEquals("5G", lastPrefer!!.getString(1))
+    }
+
+    @Test
+    fun `network prefer tolerates array wrapper`() {
+        val c = connectedClient()
+        val modem = c.getModems().first()
+        preferArrayFormat = true
+        val raw = c.getNetworkPrefer(modem)
+        assertEquals("1", raw["3G"])
+        assertEquals("0", raw["4G"])
+        assertEquals("1", raw["5G"])
+        assertTrue(c.preferEnabled(raw["3G"]))
+        assertFalse(c.preferEnabled(raw["4G"]))
+        preferArrayFormat = false
+    }
+
+    @Test
+    fun `live signal parses qeng lte nr and csq fallback`() {
+        val c = connectedClient()
+        val modem = c.getModems().first()
+        // LTE 行：尾部 5 个数字 = rsrp/rsrq/rssi/sinr/srxlev
+        val lte = InfoAnalyzer.parseQeng(
+            "+QENG: \"servingcell\",\"NOCONN\",\"LTE\",\"FDD\",460,01,E256701,301,1300,3,20,20,20,-85,-10,-73,12,17"
+        )
+        assertEquals(-85.0, lte["RSRP"]!!, 1e-9)
+        assertEquals(-10.0, lte["RSRQ"]!!, 1e-9)
+        assertEquals(-73.0, lte["RSSI"]!!, 1e-9)
+        assertEquals(12.0, lte["SINR"]!!, 1e-9)
+
+        // NR5G-SA 行：尾部 3 个数字 = rsrp/rsrq/sinr
+        val nr = InfoAnalyzer.parseQeng(
+            "+QENG: \"servingcell\",\"NOCONN\",\"NR5G-SA\",\"TDD\",460,01,,,-,N/A,301,350,20,-92,-11,15"
+        )
+        assertEquals(-92.0, nr["RSRP"]!!, 1e-9)
+        assertEquals(-11.0, nr["RSRQ"]!!, 1e-9)
+        assertEquals(15.0, nr["SINR"]!!, 1e-9)
+
+        // NSA：NR 行优先于 LTE 行
+        val nsa = InfoAnalyzer.parseQeng(
+            "+QENG: \"servingcell\",\"NOCONN\",\"NR5G-NSA\",\"TDD\",460,01,,,-,N/A,301,78,20,-95,-12,8\n" +
+                "+QENG: \"servingcell\",\"NOCONN\",\"LTE\",\"FDD\",460,01,23F7E01,301,1300,3,20,20,10,-88,-9,-70,10,15"
+        )
+        assertEquals(-95.0, nsa["RSRP"]!!, 1e-9)
+        assertEquals(8.0, nsa["SINR"]!!, 1e-9)
+
+        // CSQ 兜底
+        val csq = InfoAnalyzer.parseCsq("+CSQ: 25,99\n\nOK")
+        assertEquals(-63.0, csq["RSSI"]!!, 1e-9)
+
+        // 完整链路：端口自动发现（get_at_cfg）→ send_at QENG → 解析
+        val live = c.fetchLiveSignal(modem, null)
+        assertEquals(-85.0, live["RSRP"]!!, 1e-9)
+        assertEquals(12.0, live["SINR"]!!, 1e-9)
     }
 
     @Test

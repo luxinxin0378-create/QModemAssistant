@@ -30,6 +30,6 @@
     <string name="updated_default">更新于 —</string>
     <string name="load_failed">数据加载失败</string>
     <string name="refresh">手动刷新</string>
-    <string name="auto_refresh">自动刷新（10 秒）</string>
+    <string name="auto_refresh">实时刷新</string>
     <string name="warning_fmt">⚠ %1$s</string>
 </resources>

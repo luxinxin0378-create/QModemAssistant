@@ -576,18 +576,33 @@ class LuciClient(
         return atCfg.optString("res", "").trim()
     }
 
-    /** 网络制式偏好，返回 "3G"/"4G"/"5G" → 是否启用 */
-    fun getNetworkPrefer(section: ModemSection): Map<String, Boolean> {
+    /**
+     * 网络制式偏好原始值（"3G"/"4G"/"5G" → "0"/"1"/"true"/"false"/""）。
+     *
+     * 兼容三种后端返回：
+     *  - {"network_prefer": {"3G":"0","4G":"1","5G":"1"}}（对象，Quectel 系 jshn 输出）
+     *  - {"network_prefer": [{"3G":"0",...}]}（数组包对象）
+     *  - 顶层直接带 3G/4G/5G 键
+     *
+     * 注意：值为空 map 不代表查询失败；全 "0" 多为模组 AT 查询失败（见 UI 层提示）。
+     */
+    fun getNetworkPrefer(section: ModemSection): Map<String, String> {
         val d = qmodemCall("get_network_prefer", JSONObject(), section.id)
-        val np = d.optJSONObject("network_prefer") ?: d
-        val out = LinkedHashMap<String, Boolean>()
+        val np = d.optJSONObject("network_prefer")
+            ?: d.optJSONArray("network_prefer")?.optJSONObject(0)
+            ?: d
+        val out = LinkedHashMap<String, String>()
         for (k in listOf("3G", "4G", "5G")) {
             val v = np.optString(k, "")
-            if (v.isNotEmpty()) {
-                out[k] = v == "1" || v.equals("true", true)
-            }
+            if (v.isNotEmpty()) out[k] = v.trim()
         }
         return out
+    }
+
+    /** 制式偏好值 → 是否启用（"1" / "true" 视为启用） */
+    fun preferEnabled(raw: String?): Boolean {
+        val v = raw?.trim() ?: return false
+        return v == "1" || v.equals("true", ignoreCase = true)
     }
 
     /** 设置网络制式偏好（启用的制式列表，如 ["4G","5G"]；至少保留一项） */
@@ -655,6 +670,35 @@ class LuciClient(
     /** 重启模组（method: soft/hard） */
     fun doReboot(section: ModemSection, method: String) {
         qmodemCall("do_reboot", JSONObject().put("params", JSONObject().put("method", method)), section.id)
+    }
+
+    // ------------------------------------------------------------------
+    // 实时信号（AT 直查，绕过 qmodem 后端 10 秒缓存）
+    // ------------------------------------------------------------------
+
+    private var cachedAtPort: String? = null
+
+    /**
+     * 通过 send_at 直查 AT+QENG="servingcell" 获取实时信号。
+     * @param atPort 为空时自动通过 get_at_cfg 解析
+     * @return RSRP/RSRQ/SINR/RSSI → 数值（解析失败抛 FeatureException）
+     */
+    fun fetchLiveSignal(section: ModemSection, atPort: String?): Map<String, Double> {
+        val port = atPort?.takeIf { it.isNotBlank() }
+            ?: cachedAtPort?.takeIf { it.isNotBlank() }
+            ?: try {
+                getAtConfig(section).defaultPort?.also { cachedAtPort = it }
+            } catch (e: Exception) {
+                null
+            }
+            ?: throw FeatureException("未找到可用的 AT 串口")
+        val res = sendAt(section, "AT+QENG=\"servingcell\"", port)
+        val parsed = InfoAnalyzer.parseQeng(res)
+        if (parsed.isNotEmpty()) return parsed
+        // QENG 不支持时回退 AT+CSQ（仅 RSSI）
+        val csq = InfoAnalyzer.parseCsq(sendAt(section, "AT+CSQ", port))
+        if (csq.isNotEmpty()) return csq
+        throw FeatureException("模组未返回可解析的信号数据")
     }
 
     // ------------------------------------------------------------------
