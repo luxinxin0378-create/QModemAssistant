@@ -1,0 +1,13 @@
+# 构建产物
+build/
+.gradle/
+local.properties
+captures/
+
+# 签名密钥不入库（防止公开仓库泄露）
+keystore/
+
+# IDE
+.idea/
+*.iml
+.DS_Store

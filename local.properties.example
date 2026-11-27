@@ -1,0 +1,2 @@
+# 本地 SDK 路径，按需修改
+sdk.dir=/opt/android-sdk

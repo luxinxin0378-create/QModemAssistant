@@ -1,0 +1,107 @@
+# QModem 助手（Android）
+
+一款用于查看 **OpenWrt 路由器 qmodem 插件**（luci-app-qmodem）蜂窝模组状态的安卓 App：
+显示信号强度（RSRP / RSRQ / SINR / RSSI）、网络模式（5G SA / NSA / LTE）、运营商、频段、小区信息、SIM 卡与设备信息等，并支持自动刷新。
+
+## 安装
+
+1. 将 `QModemAssistant-v1.0.0.apk` 传到手机（微信 / QQ / USB 均可）；
+2. 点击安装（如提示"未知来源应用"，允许一次即可；APK 已用自签名证书正式签名）；
+3. 要求 Android 7.0（API 24）及以上。
+
+## 使用方法
+
+1. 手机与路由器处于**同一局域网**（或能访问路由器的网络）；
+2. 打开 App，在主界面输入：
+   - **路由器地址**：直接填 IP（如 `192.168.1.1`），也支持 `http://192.168.1.1:8080` 这种带协议/端口的形式；
+   - **端口**：默认 80（地址里带了端口会自动识别）；
+   - **用户名 / 密码**：路由器 LuCI 管理账号（默认 root）；
+3. 勾选 **记住密码并保存设备** 后，该路由器会被保存，下次打开直接从"已保存设备"下拉框选择即可一键回填；不需要时点右侧垃圾桶图标删除；
+4. 点 **连接路由器** → 进入仪表盘：
+   - 弧形仪表显示主信号（RSRP/RSCP/RSSI 优先）与质量评级（极佳 / 良好 / 一般 / 较差，按 qmodem 同款阈值）；
+   - 徽标显示 **网络模式、运营商（ISP 或 MCC/MNC 自动识别中国移动/联通/电信/广电）、频段、模组温度**；
+   - 下方卡片按 qmodem 原生分组展示全部字段：设备信息 / SIM 卡信息 / 小区信息 / 网络信息，条形图按 min/max 区间渲染；
+   - **每 10 秒自动刷新**（右上角开关可关闭），也可下拉或点右上角刷新按钮手动刷新。
+
+## 频段与运营商的直观翻译
+
+App 内置 3GPP 频点映射表（LTE EARFCN 全表、NR ARFCN、WCDMA UARFCN、GSM ARFCN），把路由器上报的原始编号翻译成人话：
+
+| 路由器原始值 | App 显示 |
+|---|---|
+| EARFCN `1798` | **1798（B3 · 1864.8 MHz）** —— B3 即联通/电信 1800 MHz 频段 |
+| EARFCN `40625` | 40625（B41 · 2593.5 MHz）—— 移动 2.6 GHz |
+| NR-ARFCN `636668` | 636668（n78 · 3.55 GHz）—— 电信/联通 3.5 GHz |
+| Band `3` | 3（B3 · 1864.8 MHz） |
+| 运营商 ISP `46001` | **中国联通（46001）** |
+| MCC `460` / MNC `01` | 460（中国） / 01（中国联通） |
+| connect_status `Yes`、SIM Status `Ready` | 是、就绪 |
+
+顶部徽标会合并显示频段与频率（如 **频段 B3 · 1864.8 MHz**），无需再查表。
+
+## 兼容性说明
+
+App 会自动探测路由器上的 qmodem 形态，以下三种均支持：
+
+| 版本 | 探测方式 | 说明 |
+|---|---|---|
+| 新版 QModem（GWan1234/QModem，rpcd ubus 对象 `qmodem`） | ① 直连 `/ubus`（uhttpd-mod-ubus）② LuCI 登录后经 `/cgi-bin/luci/admin/ubus` 代理 | 方法：`base_info / cell_info / info / network_info / sim_info` |
+| 旧版 qmodem（Lua LuCI 版） | LuCI 登录后调用 `/cgi-bin/luci/admin/modem/qmodem/modem_ctrl`、`get_modem_cfg` | 同一套 `modem_info` 数据结构 |
+| 兜底 | 旧版 ubus 对象 `modem_ctrl` 批量信息 | 多模组自动拆分为"模组 1 / 模组 2…" |
+
+登录方式：先尝试 OpenWrt 标准 `/ubus` JSON-RPC（`session.login`），失败则走 LuCI 表单登录（`sysauth_http` / `sysauth` 会话 Cookie），并支持会话过期自动重登。多个模组可在仪表盘顶部下拉切换。
+
+## 已验证
+
+- 内置 JVM 单元测试（20 项全部通过）：模拟 LuCI/qmodem 服务器验证表单登录、/ubus 直连、ubus 代理调用、模组枚举、信息合并去重、401 会话过期自动重登、旧版 HTTP 回退、信号阈值评级、N/A 容错、频点→频段映射（B3/B41/n78/n41/WCDMA B1）、PLMN→运营商翻译等。
+- 运行：`gradle test`（工程内已配置 MockWebServer 模拟）。
+
+## 目录结构
+
+```
+QModemAssistant/
+├── app/src/main/java/com/qmodem/app/
+│   ├── MainActivity.kt          # 连接页：地址/账号/密码/保存设备
+│   ├── DashboardActivity.kt     # 仪表盘：信号/网络/频段/分组信息 + 自动刷新
+│   ├── net/LuciClient.kt        # LuCI 登录 + ubus JSON-RPC + 旧版 HTTP（核心协议层）
+│   ├── net/BandMap.kt           # 频点→频段/频率映射（LTE/NR/WCDMA/GSM，3GPP 标准）
+│   ├── net/InfoAnalyzer.kt      # 字段提取/中文名/运营商/频段翻译/信号评级
+│   ├── model/Models.kt          # 数据模型
+│   ├── store/DeviceStore.kt     # 保存设备（SharedPreferences，密码 Base64 混淆存储）
+│   └── ui/GaugeView.kt          # 弧形信号仪表控件
+├── app/src/test/                # JVM 单元测试（MockWebServer 模拟路由器）
+└── (keystore 不入库，见下方「生成签名密钥」)
+```
+
+## 生成签名密钥
+
+仓库不包含签名密钥，构建 release 前先生成（密码自行设定）：
+
+```bash
+mkdir -p keystore
+keytool -genkeypair -v -keystore keystore/qmodem.keystore -alias qmodem \
+  -keyalg RSA -keysize 2048 -validity 10950 \
+  -storepass 你的密码 -keypass 你的密码 \
+  -dname "CN=QModem Assistant, OU=Dev, O=QModem, L=Beijing, ST=Beijing, C=CN"
+```
+
+## 从源码构建
+
+```bash
+# 需要 JDK 17+ 与 Android SDK (platforms;android-34, build-tools;34.0.0)
+# local.properties 中配置 sdk.dir=/path/to/android-sdk
+gradle assembleRelease   # 输出 app/build/outputs/apk/release/app-release.apk
+gradle test              # 运行单元测试
+```
+
+## 安全提示
+
+- "记住密码"仅将密码以 Base64 混淆保存在本机 App 私有目录（SharedPreferences），未做加密存储；如介意可取消勾选（仅保存地址与用户名）。
+- App 与路由器之间为 HTTP 明文通信（路由器 LuCI 本身即 HTTP），请仅在可信局域网内使用。
+
+## 常见问题
+
+- **提示"登录失败"**：检查地址/端口/账号密码；路由器若修改过 LuCI 端口请一并填写。
+- **提示"未发现任何模组"**：路由器需已安装 luci-app-qmodem 且模组识别正常（可在 LuCI 网页端确认）。
+- **提示"权限不足"**：会话 ACL 受限，请使用 root 账号登录。
+- **数据一直是 N/A**：模组未注网或厂商脚本不支持当前模组，与 App 无关，可对比 LuCI 网页端显示。

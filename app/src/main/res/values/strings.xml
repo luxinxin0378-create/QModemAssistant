@@ -1,0 +1,35 @@
+<resources>
+    <string name="app_name">QModem 助手</string>
+    <string name="app_subtitle">查看 OpenWrt 路由器 qmodem 模组信号与网络状态</string>
+
+    <!-- 主界面 -->
+    <string name="saved_devices">已保存设备</string>
+    <string name="delete_device">删除选中的保存设备</string>
+    <string name="router_address">路由器地址（如 192.168.1.1）</string>
+    <string name="port">端口（默认 80）</string>
+    <string name="username">用户名</string>
+    <string name="password">密码</string>
+    <string name="remember_password">记住密码并保存设备</string>
+    <string name="connect">连接路由器</string>
+    <string name="connecting">正在连接…</string>
+    <string name="connect_ok">连接成功，发现 %1$d 个模组</string>
+    <string name="device_deleted">已删除该保存设备</string>
+    <string name="host_required">请输入路由器地址</string>
+    <string name="host_invalid">地址格式不正确</string>
+    <string name="password_required_when_remember">勾选记住密码时请先输入密码</string>
+    <string name="usage_tip">使用提示：\n1. 路由器需安装 luci-app-qmodem 插件（新旧版本均可自动识别）；\n2. 地址支持直接填 IP，也可以带 http:// 前缀或端口，如 192.168.1.1:8080；\n3. 密码仅保存在本机 SharedPreferences 中，用于自动登录；\n4. 登录账号即路由器 LuCI 管理账号（默认 root）。</string>
+
+    <!-- 仪表盘 -->
+    <string name="dashboard_title">模组状态</string>
+    <string name="select_modem">选择模组</string>
+    <string name="modem_prefix">模组：%1$s</string>
+    <string name="signal_quality_fmt">信号质量：%1$s</string>
+    <string name="band_fmt">频段 %1$s</string>
+    <string name="temp_fmt">%1$s</string>
+    <string name="updated_at">更新于 %1$s · 下拉可手动刷新</string>
+    <string name="updated_default">更新于 —</string>
+    <string name="load_failed">数据加载失败</string>
+    <string name="refresh">手动刷新</string>
+    <string name="auto_refresh">自动刷新（10 秒）</string>
+    <string name="warning_fmt">⚠ %1$s</string>
+</resources>
